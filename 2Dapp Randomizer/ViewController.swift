@@ -1,6 +1,6 @@
 //
 //  ViewController.swift
-//  Randomizer
+//  2Dapp Randomizer
 //
 //  Created by Дмитрий Дементьев on 16.06.2022.
 //

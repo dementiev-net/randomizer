@@ -1,6 +1,6 @@
 //
 //  AppDelegate.swift
-//  Randomizer
+//  2Dapp Randomizer
 //
 //  Created by Дмитрий Дементьев on 03.06.2022.
 //
