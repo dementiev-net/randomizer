@@ -1,6 +1,6 @@
 //
 //  ViewController.swift
-//  2Dapp Randomizer
+//  Randomizer
 //
 //  Created by Дмитрий Дементьев on 16.06.2022.
 //
@@ -22,6 +22,10 @@ class ViewController: NSViewController {
     @IBAction func Reset(_ sender: Any) {
         counter_g = 0
         self.TimeText.textColor = NSColor.systemGray
+    }
+    
+    @IBAction func ResetColor(_ sender: Any) {
+        Reset(sender)
     }
     
     override func viewDidLoad() {

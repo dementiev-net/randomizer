@@ -1,6 +1,6 @@
 //
 //  AppDelegate.swift
-//  2Dapp Randomizer
+//  Randomizer
 //
 //  Created by Дмитрий Дементьев on 03.06.2022.
 //
@@ -13,6 +13,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // Insert code here to initialize your application
+        
+        // Fix menu inconsistency
+        if let mainMenu = NSApplication.shared.mainMenu {
+            mainMenu.update()
+        }
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {
