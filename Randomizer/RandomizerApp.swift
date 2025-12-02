@@ -7,35 +7,67 @@
 
 import SwiftUI
 
+// MARK: - Randomizer App
+
+/// Главная точка входа в приложение Randomizer
+///
+/// Создаёт плавающее полупрозрачное окно, которое остаётся поверх других приложений.
+/// Окно можно перемещать за любую область фона и имеет фиксированный размер.
+///
+/// ## Особенности окна:
+/// - Плавающий уровень (`.floating`) - всегда поверх других окон
+/// - Полупрозрачный чёрный фон (80% непрозрачности)
+/// - Скрытая строка заголовка
+/// - Перемещение за любую область окна
+/// - Фиксированный размер 210×190
 @main
 struct RandomizerApp: App {
-    // Эта строка связывает SwiftUI с вашим AppDelegate
+    
+    /// Делегат приложения для управления жизненным циклом
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
-                // Размеры окна
                 .frame(width: 210, height: 190)
                 .onAppear {
-                    // Настройка плавающего окна
-                    if let window = NSApplication.shared.windows.first {
-                        window.level = .floating // Поверх всех окон
-                        window.isMovableByWindowBackground = true // Можно таскать за фон
-                        // Полупрозрачный черный фон (0.8 = 80% непрозрачности)
-                        window.backgroundColor = NSColor.black.withAlphaComponent(0.8)
-                    }
+                    configureWindow()
                 }
         }
-        .windowResizability(.contentSize)
-        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize) // Фиксированный размер окна
+        .windowStyle(.hiddenTitleBar) // Скрываем стандартную строку заголовка
+    }
+    
+    /// Настраивает свойства главного окна приложения
+    ///
+    /// Устанавливает:
+    /// - Плавающий уровень для отображения поверх других окон
+    /// - Возможность перемещения окна за любую область фона
+    /// - Полупрозрачный чёрный фон (80% непрозрачности)
+    private func configureWindow() {
+        if let window = NSApplication.shared.windows.first {
+            window.level = .floating // Поверх всех окон
+            window.isMovableByWindowBackground = true // Перемещение за фон
+            window.backgroundColor = NSColor.black.withAlphaComponent(0.8) // 80% непрозрачности
+        }
     }
 }
 
-// --- Вставьте этот класс в конец файла ---
+// MARK: - App Delegate
 
+/// Делегат приложения для управления поведением при закрытии окон
+///
+/// Обеспечивает полное завершение приложения при закрытии последнего окна
+/// вместо сохранения процесса в фоне (стандартное поведение macOS).
 class AppDelegate: NSObject, NSApplicationDelegate {
-    // Этот метод закрывает приложение полностью, когда закрыто окно
+    
+    /// Определяет, должно ли приложение завершиться при закрытии последнего окна
+    ///
+    /// - Parameter sender: Экземпляр NSApplication
+    /// - Returns: `true` - приложение завершится полностью
+    ///
+    /// - Note: Возвращает `true` для немедленного завершения процесса
+    ///   вместо оставления приложения активным в Dock
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return true
     }
