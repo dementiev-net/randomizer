@@ -67,6 +67,9 @@ class RandomizerView: ObservableObject {
     /// Количество попыток шота верхнего лимита
     @Published private(set) var shotAttempts: Int = 0
 
+    /// Журнал шотов (новые записи в начале списка)
+    @Published private(set) var shotJournalEntries: [ShotJournalEntry] = []
+
     // MARK: - Private Properties
 
     /// Порог предупреждения о длительной работе (55 минут)
@@ -87,6 +90,9 @@ class RandomizerView: ObservableObject {
     /// Полный путь к JSON-файлу с настройками банкролла
     private let bankrollSettingsFileURL: URL
 
+    /// Полный путь к JSON-файлу с журналом шотов
+    private let shotJournalFileURL: URL
+
     /// Таймер для отслеживания времени и автогенерации
     private var timer: AnyCancellable?
 
@@ -102,20 +108,24 @@ class RandomizerView: ObservableObject {
     ///   - autoStartTimer: Запускать ли внутренний таймер сразу после инициализации
     ///   - defaults: Хранилище для персистентного общего времени
     ///   - bankrollSettingsFileURL: URL JSON-файла настроек банкролла
+    ///   - shotJournalFileURL: URL JSON-файла журнала шотов
     ///
     /// Автоматически восстанавливает общее время и генерирует первое число.
     init(
         service: RandomizerServiceProtocol = RandomizerService(),
         autoStartTimer: Bool = true,
         defaults: UserDefaults = .standard,
-        bankrollSettingsFileURL: URL? = nil
+        bankrollSettingsFileURL: URL? = nil,
+        shotJournalFileURL: URL? = nil
     ) {
         self.service = service
         self.defaults = defaults
         self.bankrollSettingsFileURL = bankrollSettingsFileURL ?? Self.defaultBankrollSettingsFileURL()
+        self.shotJournalFileURL = shotJournalFileURL ?? Self.defaultShotJournalFileURL()
 
         state.allTimeDuration = defaults.double(forKey: allTimeDurationKey)
         loadBankrollSettings()
+        loadShotJournal()
         checkFatigue()
 
         if autoStartTimer {
@@ -293,6 +303,37 @@ class RandomizerView: ObservableObject {
         setShotAttempts(max(0, shotAttempts - 1))
     }
 
+    /// Добавляет новую запись в журнал шотов
+    ///
+    /// - Parameters:
+    ///   - resultUSD: Результат сессии шота в долларах (может быть отрицательным)
+    ///   - comment: Комментарий к записи
+    ///   - applyToBankroll: Применять ли результат к текущему банкроллу
+    func addShotJournalEntry(resultUSD: Double, comment: String, applyToBankroll: Bool) {
+        guard resultUSD.isFinite else { return }
+
+        let limit = max(1, shotLimitNL)
+        let trimmedComment = comment.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if applyToBankroll {
+            setCurrentBankrollUSD(currentBankrollUSD + resultUSD)
+        }
+
+        let entry = ShotJournalEntry(
+            id: UUID(),
+            date: Date(),
+            limitNL: limit,
+            resultUSD: resultUSD,
+            resultBuyIns: resultUSD / Double(limit),
+            applyToBankroll: applyToBankroll,
+            bankrollAfterUSD: currentBankrollUSD,
+            comment: trimmedComment
+        )
+
+        shotJournalEntries.insert(entry, at: 0)
+        persistShotJournal()
+    }
+
     // MARK: - Private Methods
 
     /// Обновляет цвет полосок рейтинга в зависимости от числа
@@ -320,10 +361,11 @@ class RandomizerView: ObservableObject {
     private func loadBankrollSettings() {
         do {
             let settings: BankrollSettingsFileModel
+            let decoder = Self.makeJSONDecoder()
 
             if FileManager.default.fileExists(atPath: bankrollSettingsFileURL.path) {
                 let data = try Data(contentsOf: bankrollSettingsFileURL)
-                settings = try JSONDecoder().decode(BankrollSettingsFileModel.self, from: data)
+                settings = try decoder.decode(BankrollSettingsFileModel.self, from: data)
             } else {
                 settings = .defaults
             }
@@ -339,9 +381,39 @@ class RandomizerView: ObservableObject {
     /// Сохраняет параметры банкролла и шота в JSON-файл в Documents
     private func persistBankrollSettings() {
         do {
-            try ensureBankrollSettingsDirectoryExists()
-            let data = try JSONEncoder().encode(currentBankrollSettings())
+            try ensureBankrollStorageDirectoryExists()
+            let data = try Self.makeJSONEncoder().encode(currentBankrollSettings())
             try data.write(to: bankrollSettingsFileURL, options: .atomic)
+        } catch {
+            // Если запись не удалась, оставляем текущее состояние в памяти
+        }
+    }
+
+    /// Загружает журнал шотов из JSON-файла в Documents
+    private func loadShotJournal() {
+        do {
+            let decoder = Self.makeJSONDecoder()
+
+            if FileManager.default.fileExists(atPath: shotJournalFileURL.path) {
+                let data = try Data(contentsOf: shotJournalFileURL)
+                shotJournalEntries = try decoder.decode([ShotJournalEntry].self, from: data)
+            } else {
+                shotJournalEntries = []
+            }
+
+            persistShotJournal()
+        } catch {
+            shotJournalEntries = []
+            persistShotJournal()
+        }
+    }
+
+    /// Сохраняет журнал шотов в JSON-файл в Documents
+    private func persistShotJournal() {
+        do {
+            try ensureBankrollStorageDirectoryExists()
+            let data = try Self.makeJSONEncoder().encode(shotJournalEntries)
+            try data.write(to: shotJournalFileURL, options: .atomic)
         } catch {
             // Если запись не удалась, оставляем текущее состояние в памяти
         }
@@ -364,17 +436,43 @@ class RandomizerView: ObservableObject {
     }
 
     /// Создаёт каталог Documents/Randomizer при необходимости
-    private func ensureBankrollSettingsDirectoryExists() throws {
-        let directory = bankrollSettingsFileURL.deletingLastPathComponent()
+    private func ensureBankrollStorageDirectoryExists() throws {
+        let directory = Self.defaultStorageDirectoryURL()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
     /// URL файла настроек по умолчанию: ~/Documents/Randomizer/settings.json
     private static func defaultBankrollSettingsFileURL() -> URL {
+        defaultStorageDirectoryURL()
+            .appendingPathComponent("settings.json", isDirectory: false)
+    }
+
+    /// URL файла журнала шотов по умолчанию: ~/Documents/Randomizer/shot_journal.json
+    private static func defaultShotJournalFileURL() -> URL {
+        defaultStorageDirectoryURL()
+            .appendingPathComponent("shot_journal.json", isDirectory: false)
+    }
+
+    /// Каталог хранения JSON-файлов: ~/Documents/Randomizer
+    private static func defaultStorageDirectoryURL() -> URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Documents", isDirectory: true)
             .appendingPathComponent("Randomizer", isDirectory: true)
-            .appendingPathComponent("settings.json", isDirectory: false)
+    }
+
+    /// Настроенный JSONEncoder (читаемый JSON + ISO8601 даты)
+    private static func makeJSONEncoder() -> JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }
+
+    /// Настроенный JSONDecoder (ISO8601 даты)
+    private static func makeJSONDecoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
     }
 }
 
@@ -391,4 +489,18 @@ private struct BankrollSettingsFileModel: Codable {
         shotLimitNL: 25,
         shotAttempts: 0
     )
+}
+
+// MARK: - Shot Journal Entry Model
+
+/// Запись журнала шота
+struct ShotJournalEntry: Identifiable, Codable {
+    let id: UUID
+    let date: Date
+    let limitNL: Int
+    let resultUSD: Double
+    let resultBuyIns: Double
+    let applyToBankroll: Bool
+    let bankrollAfterUSD: Double
+    let comment: String
 }

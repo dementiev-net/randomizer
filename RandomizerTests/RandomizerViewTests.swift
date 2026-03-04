@@ -9,7 +9,8 @@ final class RandomizerViewTests: XCTestCase {
             service: MockRandomizerService(),
             autoStartTimer: false,
             defaults: defaults,
-            bankrollSettingsFileURL: makeSettingsFileURL()
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL()
         )
 
         XCTAssertEqual(viewModel.state.sessionDuration, 0)
@@ -27,7 +28,8 @@ final class RandomizerViewTests: XCTestCase {
             service: service,
             autoStartTimer: false,
             defaults: makeCleanDefaults(),
-            bankrollSettingsFileURL: makeSettingsFileURL()
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL()
         )
 
         XCTAssertEqual(service.generateCallCount, 1)
@@ -46,7 +48,8 @@ final class RandomizerViewTests: XCTestCase {
             service: MockRandomizerService(),
             autoStartTimer: false,
             defaults: makeCleanDefaults(),
-            bankrollSettingsFileURL: makeSettingsFileURL()
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL()
         )
 
         for _ in 0..<5 {
@@ -74,7 +77,8 @@ final class RandomizerViewTests: XCTestCase {
                 service: MockRandomizerService(),
                 autoStartTimer: false,
                 defaults: defaults,
-                bankrollSettingsFileURL: makeSettingsFileURL()
+                bankrollSettingsFileURL: makeSettingsFileURL(),
+                shotJournalFileURL: makeShotJournalFileURL()
             )
             for _ in 0..<3 {
                 viewModel.tick()
@@ -86,7 +90,8 @@ final class RandomizerViewTests: XCTestCase {
             service: MockRandomizerService(),
             autoStartTimer: false,
             defaults: defaults,
-            bankrollSettingsFileURL: makeSettingsFileURL()
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL()
         )
         XCTAssertEqual(reloaded.state.allTimeDuration, 3)
 
@@ -98,7 +103,8 @@ final class RandomizerViewTests: XCTestCase {
             service: MockRandomizerService(),
             autoStartTimer: false,
             defaults: makeCleanDefaults(),
-            bankrollSettingsFileURL: makeSettingsFileURL()
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL()
         )
 
         viewModel.setShotLimitNL(25)
@@ -132,13 +138,15 @@ final class RandomizerViewTests: XCTestCase {
         }
         defaults.removePersistentDomain(forName: suite)
         let settingsURL = makeSettingsFileURL()
+        let journalURL = makeShotJournalFileURL()
 
         do {
             let viewModel = RandomizerView(
                 service: MockRandomizerService(),
                 autoStartTimer: false,
                 defaults: defaults,
-                bankrollSettingsFileURL: settingsURL
+                bankrollSettingsFileURL: settingsURL,
+                shotJournalFileURL: journalURL
             )
             viewModel.setCurrentBankrollUSD(730)
             viewModel.setShotLimitNL(25)
@@ -149,7 +157,8 @@ final class RandomizerViewTests: XCTestCase {
             service: MockRandomizerService(),
             autoStartTimer: false,
             defaults: defaults,
-            bankrollSettingsFileURL: settingsURL
+            bankrollSettingsFileURL: settingsURL,
+            shotJournalFileURL: journalURL
         )
         XCTAssertEqual(reloaded.currentBankrollUSD, 730)
         XCTAssertEqual(reloaded.shotLimitNL, 25)
@@ -164,7 +173,8 @@ final class RandomizerViewTests: XCTestCase {
             service: MockRandomizerService(),
             autoStartTimer: false,
             defaults: makeCleanDefaults(),
-            bankrollSettingsFileURL: makeSettingsFileURL()
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL()
         )
 
         viewModel.setShotAttempts(0)
@@ -176,6 +186,64 @@ final class RandomizerViewTests: XCTestCase {
 
         viewModel.setShotAttempts(-5)
         XCTAssertEqual(viewModel.shotAttempts, 0)
+    }
+
+    func testShotJournalEntryPersistsAndUpdatesBankroll() {
+        let defaults = makeCleanDefaults()
+        let settingsURL = makeSettingsFileURL()
+        let journalURL = makeShotJournalFileURL()
+
+        let viewModel = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: defaults,
+            bankrollSettingsFileURL: settingsURL,
+            shotJournalFileURL: journalURL
+        )
+        viewModel.setShotLimitNL(25)
+        viewModel.setCurrentBankrollUSD(700)
+
+        viewModel.addShotJournalEntry(resultUSD: -50, comment: "неудачный шот", applyToBankroll: true)
+
+        XCTAssertEqual(viewModel.currentBankrollUSD, 650)
+        XCTAssertEqual(viewModel.shotJournalEntries.count, 1)
+        XCTAssertEqual(viewModel.shotJournalEntries[0].limitNL, 25)
+        XCTAssertEqual(viewModel.shotJournalEntries[0].resultUSD, -50)
+        XCTAssertEqual(viewModel.shotJournalEntries[0].resultBuyIns, -2)
+        XCTAssertEqual(viewModel.shotJournalEntries[0].bankrollAfterUSD, 650)
+        XCTAssertTrue(viewModel.shotJournalEntries[0].applyToBankroll)
+        XCTAssertEqual(viewModel.shotJournalEntries[0].comment, "неудачный шот")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: journalURL.path))
+
+        let reloaded = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: defaults,
+            bankrollSettingsFileURL: settingsURL,
+            shotJournalFileURL: journalURL
+        )
+        XCTAssertEqual(reloaded.shotJournalEntries.count, 1)
+        XCTAssertEqual(reloaded.shotJournalEntries[0].resultUSD, -50)
+    }
+
+    func testShotJournalEntryCanBeSavedWithoutApplyingToBankroll() {
+        let viewModel = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: makeCleanDefaults(),
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL()
+        )
+        viewModel.setShotLimitNL(25)
+        viewModel.setCurrentBankrollUSD(500)
+
+        viewModel.addShotJournalEntry(resultUSD: 25, comment: "", applyToBankroll: false)
+
+        XCTAssertEqual(viewModel.currentBankrollUSD, 500)
+        XCTAssertEqual(viewModel.shotJournalEntries.count, 1)
+        XCTAssertFalse(viewModel.shotJournalEntries[0].applyToBankroll)
+        XCTAssertEqual(viewModel.shotJournalEntries[0].bankrollAfterUSD, 500)
+        XCTAssertEqual(viewModel.shotJournalEntries[0].resultBuyIns, 1)
     }
 
     private func makeCleanDefaults() -> UserDefaults {
@@ -192,6 +260,13 @@ final class RandomizerViewTests: XCTestCase {
             .appendingPathComponent("RandomizerTests.\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory.appendingPathComponent("settings.json", isDirectory: false)
+    }
+
+    private func makeShotJournalFileURL() -> URL {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("RandomizerTests.\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent("shot_journal.json", isDirectory: false)
     }
 }
 
