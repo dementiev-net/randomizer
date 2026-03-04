@@ -59,10 +59,10 @@ class RandomizerView: ObservableObject {
 
     /// Цвет полосок рейтинга (зависит от сгенерированного числа)
     ///
-    /// - Зелёный: 67-99 (высокий рейтинг)
-    /// - Жёлтый: 34-66 (средний рейтинг)
-    /// - Красный: 1-33 (низкий рейтинг)
-    @Published var barColor: Color = .blue
+    /// - 0-33: сероватый
+    /// - 34-66: светло-серо-голубой
+    /// - 67-99: почти белый
+    @Published var barColor: Color = Color(red: 0.45, green: 0.48, blue: 0.53)
 
     /// Текущее состояние усталости пользователя
     @Published var fatigueState: SessionFatigueState = .normal
@@ -486,14 +486,17 @@ class RandomizerView: ObservableObject {
     /// - Parameter number: Сгенерированное число (1-99)
     ///
     /// Логика окрашивания:
-    /// - **67-99**: зелёный (высокий)
-    /// - **34-66**: жёлтый (средний)
-    /// - **1-33**: красный (низкий)
+    /// - **0-33**: сероватый
+    /// - **34-66**: светло-серо-голубой
+    /// - **67-99**: почти белый
     private func updateBarColor(for number: Int) {
         switch number {
-        case 67...99: barColor = .green
-        case 34...66: barColor = .yellow
-        default:      barColor = .red
+        case ...33:
+            barColor = Color(red: 0.45, green: 0.48, blue: 0.53) // ~#737A87
+        case 34...66:
+            barColor = Color(red: 0.72, green: 0.78, blue: 0.86) // ~#B8C7DB
+        default:
+            barColor = Color(red: 0.95, green: 0.97, blue: 0.99) // ~#F2F7FC
         }
     }
 
