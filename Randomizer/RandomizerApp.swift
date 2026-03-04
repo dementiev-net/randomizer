@@ -43,7 +43,8 @@ struct RandomizerApp: App {
         Window("Журнал шотов", id: AppWindowID.shotJournal) {
             ShotJournalWindowView(viewModel: viewModel)
         }
-        .defaultSize(width: 820, height: 520)
+        .defaultSize(width: 980, height: 700)
+        .windowToolbarStyle(.unified(showsTitle: false))
     }
 
     /// Настраивает свойства главного окна приложения

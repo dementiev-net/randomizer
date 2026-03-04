@@ -6,12 +6,27 @@
 //
 
 import SwiftUI
+import Charts
+
+private enum BankrollChartMode: String, CaseIterable, Identifiable {
+    case entries = "По записям"
+    case days = "По дням"
+
+    var id: String { rawValue }
+}
+
+private struct BankrollChartPoint: Identifiable {
+    let id: Int
+    let date: Date
+    let bankroll: Double
+}
 
 struct ShotJournalWindowView: View {
 
     @ObservedObject var viewModel: RandomizerView
 
     @State private var selection: ShotJournalEntry.ID?
+    @State private var chartMode: BankrollChartMode = .entries
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -23,6 +38,80 @@ struct ShotJournalWindowView: View {
                     .foregroundColor(.gray)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("График банкролла")
+                            .font(.system(size: 14, weight: .semibold))
+
+                        Spacer()
+
+                        Picker(selection: $chartMode) {
+                            ForEach(BankrollChartMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
+                        } label: {
+                            EmptyView()
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .accessibilityLabel("Режим графика")
+                        .frame(width: 220)
+                    }
+
+                    Chart(chartPoints) { point in
+                        AreaMark(
+                            x: .value("Дата", point.date),
+                            y: .value("Банкролл", point.bankroll)
+                        )
+                        .foregroundStyle(
+                            .linearGradient(
+                                colors: [Color.cyan.opacity(0.25), Color.cyan.opacity(0.03)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+
+                        LineMark(
+                            x: .value("Дата", point.date),
+                            y: .value("Банкролл", point.bankroll)
+                        )
+                        .foregroundStyle(.cyan)
+                        .lineStyle(StrokeStyle(lineWidth: 2))
+                        .interpolationMethod(.catmullRom)
+
+                        PointMark(
+                            x: .value("Дата", point.date),
+                            y: .value("Банкролл", point.bankroll)
+                        )
+                        .foregroundStyle(.cyan.opacity(0.8))
+                    }
+                    .chartXAxis {
+                        AxisMarks(values: .automatic(desiredCount: 5)) { value in
+                            AxisGridLine()
+                            AxisTick()
+                            AxisValueLabel {
+                                if let date = value.as(Date.self) {
+                                    Text(axisDateLabel(for: date))
+                                }
+                            }
+                        }
+                    }
+                    .chartYAxis {
+                        AxisMarks(position: .leading)
+                    }
+                    .frame(height: 190)
+
+                    HStack(spacing: 16) {
+                        Text("Текущий: \(formattedAmount(chartCurrentBankroll))")
+                        Text("Мин: \(formattedAmount(chartMinBankroll))")
+                        Text("Макс: \(formattedAmount(chartMaxBankroll))")
+                    }
+                    .font(.system(size: 12))
+                    .foregroundColor(.gray)
+                }
+
+                Divider()
+
                 Table(viewModel.shotJournalEntries, selection: $selection) {
                     TableColumn("Дата") { entry in
                         Text(Self.dateFormatter.string(from: entry.date))
@@ -60,14 +149,62 @@ struct ShotJournalWindowView: View {
                             .lineLimit(1)
                     }
                 }
+                .frame(maxHeight: .infinity)
             }
-
-            Text("График банкролла добавим в следующем шаге.")
-                .font(.system(size: 12))
-                .foregroundColor(.gray)
         }
         .padding(16)
-        .frame(minWidth: 760, minHeight: 420)
+        .frame(minWidth: 900, minHeight: 620)
+    }
+
+    private var chartPoints: [BankrollChartPoint] {
+        let sortedEntries = viewModel.shotJournalEntries.sorted { $0.date < $1.date }
+
+        switch chartMode {
+        case .entries:
+            return sortedEntries.enumerated().map { index, entry in
+                BankrollChartPoint(id: index, date: entry.date, bankroll: entry.bankrollAfterUSD)
+            }
+
+        case .days:
+            var lastEntryByDay: [Date: ShotJournalEntry] = [:]
+            let calendar = Calendar.current
+
+            for entry in sortedEntries {
+                let day = calendar.startOfDay(for: entry.date)
+                let current = lastEntryByDay[day]
+
+                if current == nil || entry.date > current!.date {
+                    lastEntryByDay[day] = entry
+                }
+            }
+
+            let orderedDays = lastEntryByDay.keys.sorted()
+
+            return orderedDays.enumerated().compactMap { index, day in
+                guard let entry = lastEntryByDay[day] else { return nil }
+                return BankrollChartPoint(id: index, date: day, bankroll: entry.bankrollAfterUSD)
+            }
+        }
+    }
+
+    private var chartCurrentBankroll: Double {
+        chartPoints.last?.bankroll ?? 0
+    }
+
+    private var chartMinBankroll: Double {
+        chartPoints.map(\.bankroll).min() ?? 0
+    }
+
+    private var chartMaxBankroll: Double {
+        chartPoints.map(\.bankroll).max() ?? 0
+    }
+
+    private func axisDateLabel(for date: Date) -> String {
+        if chartMode == .days {
+            return Self.chartDayFormatter.string(from: date)
+        }
+
+        return Self.chartEntryFormatter.string(from: date)
     }
 
     private func formattedAmount(_ value: Double) -> String {
@@ -104,6 +241,18 @@ struct ShotJournalWindowView: View {
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "dd.MM.yyyy HH:mm"
+        return formatter
+    }()
+
+    private static let chartDayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "dd.MM"
+        return formatter
+    }()
+
+    private static let chartEntryFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "dd.MM HH:mm"
         return formatter
     }()
 }
