@@ -22,13 +22,16 @@ import SwiftUI
 /// - Фиксированный размер 210×220
 @main
 struct RandomizerApp: App {
-    
+
     /// Делегат приложения для управления жизненным циклом
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    
+
+    /// Общий ViewModel приложения для всех окон
+    @StateObject private var viewModel = RandomizerView()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(viewModel: viewModel)
                 .frame(width: 210, height: 220)
                 .onAppear {
                     configureWindow()
@@ -36,8 +39,13 @@ struct RandomizerApp: App {
         }
         .windowResizability(.contentSize) // Фиксированный размер окна
         .windowStyle(.hiddenTitleBar) // Скрываем стандартную строку заголовка
+
+        Window("Журнал шотов", id: AppWindowID.shotJournal) {
+            ShotJournalWindowView(viewModel: viewModel)
+        }
+        .defaultSize(width: 820, height: 520)
     }
-    
+
     /// Настраивает свойства главного окна приложения
     ///
     /// Устанавливает:
@@ -60,7 +68,7 @@ struct RandomizerApp: App {
 /// Обеспечивает полное завершение приложения при закрытии последнего окна
 /// вместо сохранения процесса в фоне (стандартное поведение macOS).
 class AppDelegate: NSObject, NSApplicationDelegate {
-    
+
     /// Определяет, должно ли приложение завершиться при закрытии последнего окна
     ///
     /// - Parameter sender: Экземпляр NSApplication

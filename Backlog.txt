@@ -9,4 +9,3 @@ Request Randomizer Shot Management (2026-03-04)
 Request Randomizer Quality (2026-03-04)
 [x] P1 tests: добавить unit-тесты для правил шота и расчета порогов
 [x] P2 docs: описать логику 25 BI / 2 BI и статусы готовности шота в README
-[ ] P2 export: добавить экспорт истории шотов в CSV

@@ -19,15 +19,19 @@ let package = Package(
             path: "Randomizer",
             exclude: [
                 "Assets.xcassets",
+                "AppWindowID.swift",
                 "RandomizerApp.swift",
-                "Views/ContentView.swift",
-                "Views/Components/RatingView.swift",
+                "Views/Shared/RatingView.swift",
+                "Views/Main",
+                "Views/Journal",
             ],
             sources: [
+                "Models/BankrollSettingsFileModel.swift",
                 "Models/SessionStateModel.swift",
+                "Models/ShotJournalEntry.swift",
                 "Services/RandomizerService.swift",
                 "Utils/TimeHelper.swift",
-                "Views/RandomizerView.swift",
+                "ViewModels/RandomizerView.swift",
             ]
         ),
         .testTarget(
