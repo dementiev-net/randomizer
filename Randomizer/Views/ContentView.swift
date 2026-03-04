@@ -27,20 +27,20 @@ import SwiftUI
 /// - **Warning**: жёлтый цвет таймера + иконка предупреждения
 /// - **Critical**: красный пульсирующий таймер
 struct ContentView: View {
-    
+
     // MARK: - State Properties
-    
+
     /// ViewModel с бизнес-логикой и состоянием
     @StateObject private var viewModel = RandomizerView()
-    
+
     /// Флаг для анимации пульсации в критическом состоянии
     @State private var isPulsing = false
-    
+
     // MARK: - Body
-    
+
     var body: some View {
         VStack(spacing: 8) {
-            
+
             // 1. Основное число (крупный шрифт с ведущими нулями)
             Text(String(format: "%03d", viewModel.state.currentNumber))
                 .font(.custom("HelveticaNeue-Bold", size: 150))
@@ -49,30 +49,30 @@ struct ContentView: View {
                 .foregroundColor(.white)
                 .contentShape(Rectangle()) // Расширяет область тапа
                 .shadow(color: .black.opacity(0.5), radius: 2, x: 0, y: 1)
-            
+
             // 2. Визуальный рейтинг (цветные полоски)
             RatingView(level: viewModel.state.currentRating, activeColor: viewModel.barColor)
                 .padding(.horizontal, 20)
                 .padding(.bottom, 5)
-            
+
             // 3. Секция таймеров
             VStack(spacing: 4) {
-                
+
                 // Строка таймера текущей сессии
                 HStack {
                     Text("Сессия")
                         .foregroundColor(.gray)
-                    
+
                     Spacer()
-                    
+
                     // Время сессии + кнопка сброса
                     HStack(spacing: 6) {
                         Text(TimeHelper.format(seconds: viewModel.state.sessionDuration))
                             .foregroundColor(.white)
                             .monospacedDigit()
-                        
+
                         // Кнопка сброса таймера сессии
-                        Button(action: viewModel.resetAllTime) {
+                        Button(action: viewModel.resetSession) {
                             Image(systemName: "arrow.counterclockwise")
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundColor(.gray)
@@ -82,14 +82,14 @@ struct ContentView: View {
                         .help("Reset Session")
                     }
                 }
-                
+
                 Divider().background(Color.white.opacity(0.1))
-                
+
                 // Строка общего времени использования
                 HStack {
                     HStack(spacing: 4) {
                         Text("Все время")
-                        
+
                         // Иконка предупреждения при усталости
                         if viewModel.fatigueState != .normal {
                             Image(systemName: "exclamationmark.triangle.fill")
@@ -97,9 +97,9 @@ struct ContentView: View {
                         }
                     }
                     .foregroundColor(viewModel.timerColor)
-                    
+
                     Spacer()
-                    
+
                     // Время + невидимая заглушка для выравнивания
                     HStack(spacing: 6) {
                         Text(TimeHelper.format(seconds: viewModel.state.allTimeDuration))
@@ -113,7 +113,7 @@ struct ContentView: View {
                                 value: isPulsing
                             )
                             .onAppear { isPulsing = true }
-                        
+
                         // Невидимая заглушка для выравнивания со строкой выше
                         // (компенсирует ширину кнопки сброса)
                         Image(systemName: "arrow.counterclockwise")
@@ -132,7 +132,7 @@ struct ContentView: View {
             // Тактильная обратная связь
             let generator = NSHapticFeedbackManager.defaultPerformer
             generator.perform(.alignment, performanceTime: .now)
-            
+
             // Генерация нового числа
             viewModel.generateNewData()
         }

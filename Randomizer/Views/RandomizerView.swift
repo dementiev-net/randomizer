@@ -19,10 +19,10 @@ import Combine
 enum SessionFatigueState {
     /// Нормальное состояние (менее 55 минут)
     case normal
-    
+
     /// Предупреждение о приближении к лимиту (55-59 минут)
     case warning
-    
+
     /// Критическое состояние, рекомендуется перерыв (60+ минут)
     case critical
 }
@@ -42,54 +42,75 @@ enum SessionFatigueState {
 /// - **55 минут**: переход в состояние warning (оранжевый)
 /// - **60 минут**: переход в состояние critical (красный, пульсация)
 class RandomizerView: ObservableObject {
-    
+
     // MARK: - Published Properties
-    
+
     /// Текущее состояние сессии (числа, рейтинг, таймеры)
     @Published var state = SessionStateModel()
-    
+
     /// Цвет полосок рейтинга (зависит от сгенерированного числа)
     ///
-    /// - Зелёный: 67-100 (высокий рейтинг)
+    /// - Зелёный: 67-99 (высокий рейтинг)
     /// - Жёлтый: 34-66 (средний рейтинг)
     /// - Красный: 1-33 (низкий рейтинг)
     @Published var barColor: Color = .blue
-    
+
     /// Текущее состояние усталости пользователя
     @Published var fatigueState: SessionFatigueState = .normal
-    
+
     // MARK: - Private Properties
-    
+
     /// Порог предупреждения о длительной работе (55 минут)
     private let warningThreshold: TimeInterval = 55 * 60
-    
+
     /// Порог критической усталости (60 минут)
     private let criticalThreshold: TimeInterval = 60 * 60
-    
+
     /// Сервис генерации случайных чисел и расчёта рейтинга
     private let service: RandomizerServiceProtocol
-    
+
+    /// Персистентное хранилище общего времени
+    private let defaults: UserDefaults
+
+    /// Ключ сохранения общего времени использования
+    private let allTimeDurationKey = "allTimeDuration"
+
     /// Таймер для отслеживания времени и автогенерации
     private var timer: AnyCancellable?
-    
+
     /// Интервал автоматической генерации нового числа (секунды)
     private let randomInterval: TimeInterval = 10.0
-    
+
     // MARK: - Initialization
-    
+
     /// Инициализирует ViewModel с опциональным сервисом
     ///
-    /// - Parameter service: Сервис генерации чисел (по умолчанию `RandomizerService`)
+    /// - Parameters:
+    ///   - service: Сервис генерации чисел (по умолчанию `RandomizerService`)
+    ///   - autoStartTimer: Запускать ли внутренний таймер сразу после инициализации
+    ///   - defaults: Хранилище для персистентного общего времени
     ///
-    /// Автоматически запускает таймер и генерирует первое число.
-    init(service: RandomizerServiceProtocol = RandomizerService()) {
+    /// Автоматически восстанавливает общее время и генерирует первое число.
+    init(
+        service: RandomizerServiceProtocol = RandomizerService(),
+        autoStartTimer: Bool = true,
+        defaults: UserDefaults = .standard
+    ) {
         self.service = service
-        startTimer()
+        self.defaults = defaults
+
+        state.allTimeDuration = defaults.double(forKey: allTimeDurationKey)
+        checkFatigue()
+
+        if autoStartTimer {
+            startTimer()
+        }
+
         generateNewData()
     }
-    
+
     // MARK: - Timer Management
-    
+
     /// Запускает таймер обновления состояния (срабатывает каждую секунду)
     ///
     /// Таймер обновляет:
@@ -104,26 +125,27 @@ class RandomizerView: ObservableObject {
                 self?.tick()
             }
     }
-    
+
     /// Обработчик тика таймера (вызывается каждую секунду)
     ///
     /// Увеличивает счётчики времени, проверяет усталость и
     /// генерирует новое число при достижении интервала автогенерации.
-    private func tick() {
+    func tick() {
         state.sessionDuration += 1
         state.allTimeDuration += 1
-        
+        persistAllTimeDuration()
+
         // Проверяем усталость каждую секунду
         checkFatigue()
-        
+
         // Автогенерация каждые 10 секунд
         if Int(state.sessionDuration) % Int(randomInterval) == 0 {
             generateNewData()
         }
     }
-    
+
     // MARK: - Fatigue Monitoring
-    
+
     /// Проверяет уровень усталости на основе общего времени использования
     ///
     /// Обновляет `fatigueState` в зависимости от пройденного времени:
@@ -139,7 +161,7 @@ class RandomizerView: ObservableObject {
             if fatigueState != .normal { fatigueState = .normal }
         }
     }
-    
+
     /// Возвращает цвет таймера в зависимости от состояния усталости
     ///
     /// - Returns: Цвет для отображения таймера общего времени
@@ -155,9 +177,9 @@ class RandomizerView: ObservableObject {
         case .critical: return .red
         }
     }
-    
+
     // MARK: - Public Methods
-    
+
     /// Генерирует новое случайное число и обновляет состояние
     ///
     /// Создаёт новое число через сервис, рассчитывает рейтинг
@@ -173,33 +195,43 @@ class RandomizerView: ObservableObject {
         state.currentRating = service.calculateRating(for: newNumber)
         updateBarColor(for: newNumber)
     }
-    
-    /// Сбрасывает счётчик общего времени использования
+
+    /// Сбрасывает длительность текущей сессии
     ///
-    /// Обнуляет `allTimeDuration` и пересчитывает состояние усталости,
-    /// возвращая UI в нормальное состояние.
+    /// Обнуляет `sessionDuration` без изменения общего времени.
+    func resetSession() {
+        state.sessionDuration = 0
+    }
+
+    /// Сбрасывает общее время использования
     ///
-    /// - Note: Счётчик текущей сессии не сбрасывается
+    /// Обнуляет `allTimeDuration`, сохраняет состояние и пересчитывает усталость.
     func resetAllTime() {
         state.allTimeDuration = 0
-        checkFatigue() // Сразу обновляем визуальное состояние
+        persistAllTimeDuration()
+        checkFatigue()
     }
-    
+
     // MARK: - Private Methods
-    
+
     /// Обновляет цвет полосок рейтинга в зависимости от числа
     ///
     /// - Parameter number: Сгенерированное число (1-99)
     ///
     /// Логика окрашивания:
-    /// - **67-100**: зелёный (высокий)
+    /// - **67-99**: зелёный (высокий)
     /// - **34-66**: жёлтый (средний)
     /// - **1-33**: красный (низкий)
     private func updateBarColor(for number: Int) {
         switch number {
-        case 67...100: barColor = .green
-        case 34...66:  barColor = .yellow
-        default:       barColor = .red
+        case 67...99: barColor = .green
+        case 34...66: barColor = .yellow
+        default:      barColor = .red
         }
+    }
+
+    /// Сохраняет общее время использования в `UserDefaults`
+    private func persistAllTimeDuration() {
+        defaults.set(state.allTimeDuration, forKey: allTimeDurationKey)
     }
 }
