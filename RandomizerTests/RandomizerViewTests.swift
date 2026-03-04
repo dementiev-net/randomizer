@@ -68,6 +68,66 @@ final class RandomizerViewTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
     }
 
+    func testShotAvailabilityUsesBankrollAndLimit() {
+        let viewModel = RandomizerView(service: MockRandomizerService(), autoStartTimer: false, defaults: makeCleanDefaults())
+
+        viewModel.setShotLimitNL(25)
+        viewModel.setCurrentBankrollUSD(624)
+
+        XCTAssertEqual(viewModel.requiredBankrollForShot, 625)
+        XCTAssertEqual(viewModel.shotBudget, 50)
+        XCTAssertEqual(viewModel.missingBankrollForShot, 1)
+        XCTAssertEqual(viewModel.bankrollReserveForShot, 0)
+        XCTAssertFalse(viewModel.canTakeShot)
+
+        viewModel.setCurrentBankrollUSD(625)
+
+        XCTAssertEqual(viewModel.missingBankrollForShot, 0)
+        XCTAssertEqual(viewModel.bankrollReserveForShot, 0)
+        XCTAssertTrue(viewModel.canTakeShot)
+
+        viewModel.setCurrentBankrollUSD(700)
+
+        XCTAssertEqual(viewModel.bankrollReserveForShot, 75)
+        XCTAssertTrue(viewModel.canTakeShot)
+    }
+
+    func testBankrollSettingsPersistBetweenViewModelInstances() {
+        let suite = "RandomizerTests.BankrollPersistence.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            return XCTFail("Unable to create suite defaults")
+        }
+        defaults.removePersistentDomain(forName: suite)
+
+        do {
+            let viewModel = RandomizerView(service: MockRandomizerService(), autoStartTimer: false, defaults: defaults)
+            viewModel.setCurrentBankrollUSD(730)
+            viewModel.setShotLimitNL(25)
+            viewModel.setShotAttempts(3)
+        }
+
+        let reloaded = RandomizerView(service: MockRandomizerService(), autoStartTimer: false, defaults: defaults)
+        XCTAssertEqual(reloaded.currentBankrollUSD, 730)
+        XCTAssertEqual(reloaded.shotLimitNL, 25)
+        XCTAssertEqual(reloaded.shotAttempts, 3)
+
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testShotAttemptsCannotGoBelowZero() {
+        let viewModel = RandomizerView(service: MockRandomizerService(), autoStartTimer: false, defaults: makeCleanDefaults())
+
+        viewModel.setShotAttempts(0)
+        viewModel.decrementShotAttempts()
+        XCTAssertEqual(viewModel.shotAttempts, 0)
+
+        viewModel.incrementShotAttempts()
+        XCTAssertEqual(viewModel.shotAttempts, 1)
+
+        viewModel.setShotAttempts(-5)
+        XCTAssertEqual(viewModel.shotAttempts, 0)
+    }
+
     private func makeCleanDefaults() -> UserDefaults {
         let suite = "RandomizerTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else {

@@ -58,6 +58,15 @@ class RandomizerView: ObservableObject {
     /// Текущее состояние усталости пользователя
     @Published var fatigueState: SessionFatigueState = .normal
 
+    /// Текущий банкролл в долларах
+    @Published private(set) var currentBankrollUSD: Double = 0
+
+    /// Лимит для шота (например, 25 для NL25)
+    @Published private(set) var shotLimitNL: Int = 25
+
+    /// Количество попыток шота верхнего лимита
+    @Published private(set) var shotAttempts: Int = 0
+
     // MARK: - Private Properties
 
     /// Порог предупреждения о длительной работе (55 минут)
@@ -74,6 +83,15 @@ class RandomizerView: ObservableObject {
 
     /// Ключ сохранения общего времени использования
     private let allTimeDurationKey = "allTimeDuration"
+
+    /// Ключ сохранения текущего банкролла
+    private let currentBankrollUSDKey = "currentBankrollUSD"
+
+    /// Ключ сохранения лимита для шота
+    private let shotLimitNLKey = "shotLimitNL"
+
+    /// Ключ сохранения количества попыток шота
+    private let shotAttemptsKey = "shotAttempts"
 
     /// Таймер для отслеживания времени и автогенерации
     private var timer: AnyCancellable?
@@ -100,6 +118,7 @@ class RandomizerView: ObservableObject {
         self.defaults = defaults
 
         state.allTimeDuration = defaults.double(forKey: allTimeDurationKey)
+        loadBankrollSettings()
         checkFatigue()
 
         if autoStartTimer {
@@ -178,6 +197,31 @@ class RandomizerView: ObservableObject {
         }
     }
 
+    /// Требуемый банкролл для шота (25 BI верхнего лимита)
+    var requiredBankrollForShot: Double {
+        Double(shotLimitNL) * 25
+    }
+
+    /// Бюджет шота (2 BI верхнего лимита)
+    var shotBudget: Double {
+        Double(shotLimitNL) * 2
+    }
+
+    /// Сколько не хватает до минимального банкролла для шота
+    var missingBankrollForShot: Double {
+        max(0, requiredBankrollForShot - currentBankrollUSD)
+    }
+
+    /// Можно ли делать шот верхнего лимита
+    var canTakeShot: Bool {
+        currentBankrollUSD >= requiredBankrollForShot
+    }
+
+    /// Запас банкролла сверх минимального порога для шота
+    var bankrollReserveForShot: Double {
+        max(0, currentBankrollUSD - requiredBankrollForShot)
+    }
+
     // MARK: - Public Methods
 
     /// Генерирует новое случайное число и обновляет состояние
@@ -212,6 +256,40 @@ class RandomizerView: ObservableObject {
         checkFatigue()
     }
 
+    /// Обновляет текущий банкролл
+    ///
+    /// - Parameter value: Значение в долларах
+    func setCurrentBankrollUSD(_ value: Double) {
+        currentBankrollUSD = max(0, value)
+        persistBankrollSettings()
+    }
+
+    /// Обновляет верхний лимит для шота
+    ///
+    /// - Parameter value: Лимит NL (например, 25 для NL25)
+    func setShotLimitNL(_ value: Int) {
+        shotLimitNL = max(1, value)
+        persistBankrollSettings()
+    }
+
+    /// Обновляет количество попыток шота
+    ///
+    /// - Parameter value: Количество попыток (не меньше 0)
+    func setShotAttempts(_ value: Int) {
+        shotAttempts = max(0, value)
+        persistBankrollSettings()
+    }
+
+    /// Увеличивает счётчик попыток шота на 1
+    func incrementShotAttempts() {
+        setShotAttempts(shotAttempts + 1)
+    }
+
+    /// Уменьшает счётчик попыток шота на 1 (не ниже 0)
+    func decrementShotAttempts() {
+        setShotAttempts(max(0, shotAttempts - 1))
+    }
+
     // MARK: - Private Methods
 
     /// Обновляет цвет полосок рейтинга в зависимости от числа
@@ -233,5 +311,33 @@ class RandomizerView: ObservableObject {
     /// Сохраняет общее время использования в `UserDefaults`
     private func persistAllTimeDuration() {
         defaults.set(state.allTimeDuration, forKey: allTimeDurationKey)
+    }
+
+    /// Загружает параметры банкролла и шота из `UserDefaults`
+    private func loadBankrollSettings() {
+        if defaults.object(forKey: currentBankrollUSDKey) != nil {
+            currentBankrollUSD = max(0, defaults.double(forKey: currentBankrollUSDKey))
+        } else {
+            currentBankrollUSD = 0
+        }
+
+        if defaults.object(forKey: shotLimitNLKey) != nil {
+            shotLimitNL = max(1, defaults.integer(forKey: shotLimitNLKey))
+        } else {
+            shotLimitNL = 25
+        }
+
+        if defaults.object(forKey: shotAttemptsKey) != nil {
+            shotAttempts = max(0, defaults.integer(forKey: shotAttemptsKey))
+        } else {
+            shotAttempts = 0
+        }
+    }
+
+    /// Сохраняет параметры банкролла и шота в `UserDefaults`
+    private func persistBankrollSettings() {
+        defaults.set(currentBankrollUSD, forKey: currentBankrollUSDKey)
+        defaults.set(shotLimitNL, forKey: shotLimitNLKey)
+        defaults.set(shotAttempts, forKey: shotAttemptsKey)
     }
 }

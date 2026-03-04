@@ -19,7 +19,7 @@ import SwiftUI
 /// - Полупрозрачный чёрный фон (80% непрозрачности)
 /// - Скрытая строка заголовка
 /// - Перемещение за любую область окна
-/// - Фиксированный размер 210×190
+/// - Фиксированный размер 210×220
 @main
 struct RandomizerApp: App {
     
@@ -29,7 +29,7 @@ struct RandomizerApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .frame(width: 210, height: 190)
+                .frame(width: 210, height: 220)
                 .onAppear {
                     configureWindow()
                 }
