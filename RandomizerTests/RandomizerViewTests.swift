@@ -207,12 +207,16 @@ final class RandomizerViewTests: XCTestCase {
         viewModel.setShotLimitNL(25)
         viewModel.setShotAttempts(2)
         viewModel.setCurrentBankrollUSD(700)
+        for _ in 0..<3 {
+            viewModel.tick()
+        }
 
         viewModel.addShotJournalEntry(resultUSD: -50, comment: "неудачный шот", applyToBankroll: true)
 
         XCTAssertEqual(viewModel.currentBankrollUSD, 650)
         XCTAssertEqual(viewModel.shotJournalEntries.count, 1)
         XCTAssertEqual(viewModel.shotJournalEntries[0].limitNL, 25)
+        XCTAssertEqual(viewModel.shotJournalEntries[0].sessionDurationSeconds, 3)
         XCTAssertEqual(viewModel.shotJournalEntries[0].resultUSD, -50)
         XCTAssertEqual(viewModel.shotJournalEntries[0].resultBuyIns, -2)
         XCTAssertEqual(viewModel.shotJournalEntries[0].bankrollAfterUSD, 650)
@@ -228,6 +232,7 @@ final class RandomizerViewTests: XCTestCase {
             shotJournalFileURL: journalURL
         )
         XCTAssertEqual(reloaded.shotJournalEntries.count, 1)
+        XCTAssertEqual(reloaded.shotJournalEntries[0].sessionDurationSeconds, 3)
         XCTAssertEqual(reloaded.shotJournalEntries[0].resultUSD, -50)
     }
 

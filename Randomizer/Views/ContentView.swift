@@ -633,6 +633,9 @@ private struct ShotJournalEntryRow: View {
                 Text("NL\(entry.limitNL)")
                     .foregroundColor(.gray)
 
+                Text("S \(TimeHelper.format(seconds: TimeInterval(entry.sessionDurationSeconds)))")
+                    .foregroundColor(.gray)
+
                 Text(formattedResultUSD(entry.resultUSD))
                     .foregroundColor(entry.resultUSD >= 0 ? .green : .orange)
                     .fontWeight(.semibold)
