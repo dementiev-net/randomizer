@@ -246,6 +246,65 @@ final class RandomizerViewTests: XCTestCase {
         XCTAssertEqual(viewModel.shotJournalEntries[0].resultBuyIns, 1)
     }
 
+    func testShotLocksAfterCumulativeMinusTwoBuyIns() {
+        let viewModel = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: makeCleanDefaults(),
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL()
+        )
+        viewModel.setShotLimitNL(25)
+        viewModel.setCurrentBankrollUSD(700)
+
+        viewModel.addShotJournalEntry(resultUSD: -30, comment: "", applyToBankroll: false)
+        XCTAssertFalse(viewModel.isShotLocked)
+        XCTAssertEqual(viewModel.currentShotResultUSD, -30)
+        XCTAssertTrue(viewModel.isShotAvailable)
+
+        viewModel.addShotJournalEntry(resultUSD: -20, comment: "", applyToBankroll: false)
+        XCTAssertTrue(viewModel.isShotLocked)
+        XCTAssertEqual(viewModel.currentShotResultUSD, -50)
+        XCTAssertFalse(viewModel.isShotAvailable)
+    }
+
+    func testShotAutoUnlocksAfterBankrollRecoveryToTwentyFiveBuyIns() {
+        let defaults = makeCleanDefaults()
+        let settingsURL = makeSettingsFileURL()
+        let journalURL = makeShotJournalFileURL()
+
+        let viewModel = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: defaults,
+            bankrollSettingsFileURL: settingsURL,
+            shotJournalFileURL: journalURL
+        )
+        viewModel.setShotLimitNL(25)
+        viewModel.setCurrentBankrollUSD(625)
+
+        viewModel.addShotJournalEntry(resultUSD: -50, comment: "", applyToBankroll: true)
+        XCTAssertTrue(viewModel.isShotLocked)
+        XCTAssertEqual(viewModel.currentBankrollUSD, 575)
+        XCTAssertEqual(viewModel.currentShotResultUSD, -50)
+        XCTAssertFalse(viewModel.isShotAvailable)
+
+        let reloadedLocked = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: defaults,
+            bankrollSettingsFileURL: settingsURL,
+            shotJournalFileURL: journalURL
+        )
+        XCTAssertTrue(reloadedLocked.isShotLocked)
+        XCTAssertEqual(reloadedLocked.currentShotResultUSD, -50)
+
+        reloadedLocked.setCurrentBankrollUSD(625)
+        XCTAssertFalse(reloadedLocked.isShotLocked)
+        XCTAssertEqual(reloadedLocked.currentShotResultUSD, 0)
+        XCTAssertTrue(reloadedLocked.isShotAvailable)
+    }
+
     private func makeCleanDefaults() -> UserDefaults {
         let suite = "RandomizerTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else {

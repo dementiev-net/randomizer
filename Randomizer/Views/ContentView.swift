@@ -137,11 +137,17 @@ struct ContentView: View {
 
                     HStack(spacing: 6) {
                         Text(
-                            viewModel.canTakeShot ?
+                            viewModel.isShotLocked ?
+                            "ШОТ ЗАКРЫТ" :
+                            viewModel.isShotAvailable ?
                             "ГОТОВ (\(formatBuyIns(viewModel.bankrollReserveForShotInBuyIns)) BI)" :
                             "нужно $\(formatAmount(viewModel.missingBankrollForShot))"
                         )
-                            .foregroundColor(viewModel.canTakeShot ? .green : .orange)
+                            .foregroundColor(
+                                viewModel.isShotLocked ?
+                                .red :
+                                (viewModel.isShotAvailable ? .green : .orange)
+                            )
                             .lineLimit(1)
 
                         Button {
@@ -292,11 +298,21 @@ private struct BankrollSettingsSheet: View {
                     Text("Порог шота (25 BI): $\(formatAmount(viewModel.requiredBankrollForShot))")
                     Text("Бюджет шота (2 BI): $\(formatAmount(viewModel.shotBudget))")
                     Text(
-                        viewModel.canTakeShot ?
+                        "Текущий шот: \(formatSignedAmount(viewModel.currentShotResultUSD))$ " +
+                        "(\(formatSignedBuyIns(viewModel.currentShotResultBuyIns)) BI)"
+                    )
+                    Text(
+                        viewModel.isShotLocked ?
+                        "Шот закрыт после -2 BI. Восстановите банкролл до $\(formatAmount(viewModel.requiredBankrollForShot))." :
+                        viewModel.isShotAvailable ?
                         "Банкролл позволяет делать шот NL\(viewModel.shotLimitNL)." :
                         "До шота NL\(viewModel.shotLimitNL) не хватает $\(formatAmount(viewModel.missingBankrollForShot))."
                     )
-                    .foregroundColor(viewModel.canTakeShot ? .green : .orange)
+                    .foregroundColor(
+                        viewModel.isShotLocked ?
+                        .red :
+                        (viewModel.isShotAvailable ? .green : .orange)
+                    )
                     .fontWeight(.semibold)
                 }
                 .font(.system(size: 12))
@@ -389,6 +405,27 @@ private struct BankrollSettingsSheet: View {
     /// Форматирует денежное значение до целого без дробной части
     private func formatAmount(_ value: Double) -> String {
         String(Int(value.rounded(.up)))
+    }
+
+    /// Форматирует число со знаком и без лишних нулей
+    private func formatSignedAmount(_ value: Double) -> String {
+        let sign = value >= 0 ? "+" : ""
+        let rounded = (value * 100).rounded() / 100
+
+        if rounded == rounded.rounded() {
+            return "\(sign)\(Int(rounded))"
+        }
+
+        if (rounded * 10).rounded() == rounded * 10 {
+            return "\(sign)\(String(format: "%.1f", rounded))"
+        }
+
+        return "\(sign)\(String(format: "%.2f", rounded))"
+    }
+
+    /// Форматирует количество бай-инов со знаком и без лишних нулей
+    private func formatSignedBuyIns(_ value: Double) -> String {
+        formatSignedAmount(value)
     }
 
     /// Форматирует число для редактируемого текстового поля
