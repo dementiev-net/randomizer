@@ -98,6 +98,39 @@ final class RandomizerViewTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
     }
 
+    func testFatigueTransitionSendsRestNotificationOnce() {
+        let defaults = makeCleanDefaults()
+        defaults.set(3299, forKey: "allTimeDuration")
+        let notifications = MockNotificationService()
+        let viewModel = RandomizerView(
+            service: MockRandomizerService(),
+            notificationService: notifications,
+            autoStartTimer: false,
+            defaults: defaults,
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL()
+        )
+
+        XCTAssertEqual(notifications.authorizationRequestsCount, 1)
+        XCTAssertEqual(
+            notifications.notifications.filter { $0.title == "Пора отдохнуть" }.count,
+            0
+        )
+
+        viewModel.tick()
+        XCTAssertEqual(viewModel.fatigueState, .warning)
+        XCTAssertEqual(
+            notifications.notifications.filter { $0.title == "Пора отдохнуть" }.count,
+            1
+        )
+
+        viewModel.tick()
+        XCTAssertEqual(
+            notifications.notifications.filter { $0.title == "Пора отдохнуть" }.count,
+            1
+        )
+    }
+
     func testShotAvailabilityUsesBankrollAndLimit() {
         let viewModel = RandomizerView(
             service: MockRandomizerService(),
@@ -257,8 +290,10 @@ final class RandomizerViewTests: XCTestCase {
     }
 
     func testShotLocksAfterCumulativeMinusTwoBuyIns() {
+        let notifications = MockNotificationService()
         let viewModel = RandomizerView(
             service: MockRandomizerService(),
+            notificationService: notifications,
             autoStartTimer: false,
             defaults: makeCleanDefaults(),
             bankrollSettingsFileURL: makeSettingsFileURL(),
@@ -276,6 +311,10 @@ final class RandomizerViewTests: XCTestCase {
         XCTAssertTrue(viewModel.isShotLocked)
         XCTAssertEqual(viewModel.currentShotResultUSD, -50)
         XCTAssertFalse(viewModel.isShotAvailable)
+        XCTAssertEqual(
+            notifications.notifications.filter { $0.title == "Игра запрещена по stop-loss" }.count,
+            1
+        )
     }
 
     func testShotAutoUnlocksAfterBankrollRecoveryToTwentyFiveBuyIns() {
@@ -401,5 +440,25 @@ private final class MockRandomizerService: RandomizerServiceProtocol {
         case 25...: return 1
         default: return 0
         }
+    }
+}
+
+private struct SentNotification {
+    let id: String
+    let title: String
+    let body: String
+}
+
+private final class MockNotificationService: NotificationServiceProtocol {
+    private(set) var authorizationRequestsCount = 0
+    private(set) var notifications: [SentNotification] = []
+
+    func requestAuthorizationIfNeeded(completion: @escaping @Sendable (Bool) -> Void) {
+        authorizationRequestsCount += 1
+        completion(true)
+    }
+
+    func postNotification(id: String, title: String, body: String) {
+        notifications.append(SentNotification(id: id, title: title, body: body))
     }
 }

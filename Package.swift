@@ -29,6 +29,7 @@ let package = Package(
                 "Models/BankrollSettingsFileModel.swift",
                 "Models/SessionStateModel.swift",
                 "Models/ShotJournalEntry.swift",
+                "Services/NotificationService.swift",
                 "Services/RandomizerService.swift",
                 "Utils/TimeHelper.swift",
                 "ViewModels/RandomizerView.swift",

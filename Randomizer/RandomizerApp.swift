@@ -27,7 +27,7 @@ struct RandomizerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     /// Общий ViewModel приложения для всех окон
-    @StateObject private var viewModel = RandomizerView()
+    @StateObject private var viewModel = RandomizerView(notificationService: NotificationService())
 
     var body: some Scene {
         WindowGroup {

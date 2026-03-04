@@ -16,7 +16,7 @@ import Combine
 /// - **normal**: стандартное состояние (серый цвет)
 /// - **warning**: предупреждение о длительной работе (оранжевый цвет, 55+ минут)
 /// - **critical**: критическая усталость (красный пульсирующий, 60+ минут)
-enum SessionFatigueState {
+enum SessionFatigueState: Equatable {
     /// Нормальное состояние (менее 55 минут)
     case normal
 
@@ -93,6 +93,9 @@ class RandomizerView: ObservableObject {
     /// Персистентное хранилище общего времени
     private let defaults: UserDefaults
 
+    /// Сервис локальных уведомлений macOS
+    private let notificationService: NotificationServiceProtocol
+
     /// Ключ сохранения общего времени использования
     private let allTimeDurationKey = "allTimeDuration"
 
@@ -114,6 +117,7 @@ class RandomizerView: ObservableObject {
     ///
     /// - Parameters:
     ///   - service: Сервис генерации чисел (по умолчанию `RandomizerService`)
+    ///   - notificationService: Сервис локальных уведомлений
     ///   - autoStartTimer: Запускать ли внутренний таймер сразу после инициализации
     ///   - defaults: Хранилище для персистентного общего времени
     ///   - bankrollSettingsFileURL: URL JSON-файла настроек банкролла
@@ -122,16 +126,19 @@ class RandomizerView: ObservableObject {
     /// Автоматически восстанавливает общее время и генерирует первое число.
     init(
         service: RandomizerServiceProtocol = RandomizerService(),
+        notificationService: NotificationServiceProtocol = NoopNotificationService(),
         autoStartTimer: Bool = true,
         defaults: UserDefaults = .standard,
         bankrollSettingsFileURL: URL? = nil,
         shotJournalFileURL: URL? = nil
     ) {
         self.service = service
+        self.notificationService = notificationService
         self.defaults = defaults
         self.bankrollSettingsFileURL = bankrollSettingsFileURL ?? Self.defaultBankrollSettingsFileURL()
         self.shotJournalFileURL = shotJournalFileURL ?? Self.defaultShotJournalFileURL()
 
+        requestNotificationAuthorizationIfNeeded()
         state.allTimeDuration = defaults.double(forKey: allTimeDurationKey)
         loadBankrollSettings()
         loadShotJournal()
@@ -188,13 +195,20 @@ class RandomizerView: ObservableObject {
     /// - 55-59 минут: warning
     /// - ≥ 60 минут: critical
     private func checkFatigue() {
+        let previousState = fatigueState
+        let nextState: SessionFatigueState
+
         if state.allTimeDuration >= criticalThreshold {
-            if fatigueState != .critical { fatigueState = .critical }
+            nextState = .critical
         } else if state.allTimeDuration >= warningThreshold {
-            if fatigueState != .warning { fatigueState = .warning }
+            nextState = .warning
         } else {
-            if fatigueState != .normal { fatigueState = .normal }
+            nextState = .normal
         }
+
+        guard nextState != previousState else { return }
+        fatigueState = nextState
+        notifyFatigueTransition(from: previousState, to: nextState)
     }
 
     /// Возвращает цвет таймера в зависимости от состояния усталости
@@ -468,6 +482,40 @@ class RandomizerView: ObservableObject {
 
         if currentShotResultUSD <= -shotBudget {
             isShotLocked = true
+            notificationService.postNotification(
+                id: "shot-stoploss-\(UUID().uuidString)",
+                title: "Игра запрещена по stop-loss",
+                body: "Шот NL\(shotLimitNL) закрыт после -\(shotAttempts) BI."
+            )
+        }
+    }
+
+    /// Запрашивает разрешение на локальные уведомления macOS
+    private func requestNotificationAuthorizationIfNeeded() {
+        notificationService.requestAuthorizationIfNeeded { _ in
+            // Результат не блокирует работу приложения.
+        }
+    }
+
+    /// Отправляет уведомление при переходе в состояние усталости
+    private func notifyFatigueTransition(from oldState: SessionFatigueState, to newState: SessionFatigueState) {
+        guard oldState != newState else { return }
+
+        switch newState {
+        case .normal:
+            break
+        case .warning:
+            notificationService.postNotification(
+                id: "fatigue-warning-\(UUID().uuidString)",
+                title: "Пора отдохнуть",
+                body: "Сессия длится долго. Сделайте короткий перерыв."
+            )
+        case .critical:
+            notificationService.postNotification(
+                id: "fatigue-critical-\(UUID().uuidString)",
+                title: "Нужен перерыв",
+                body: "Достигнут критический порог времени сессии."
+            )
         }
     }
 
