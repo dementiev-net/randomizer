@@ -84,14 +84,8 @@ class RandomizerView: ObservableObject {
     /// Ключ сохранения общего времени использования
     private let allTimeDurationKey = "allTimeDuration"
 
-    /// Ключ сохранения текущего банкролла
-    private let currentBankrollUSDKey = "currentBankrollUSD"
-
-    /// Ключ сохранения лимита для шота
-    private let shotLimitNLKey = "shotLimitNL"
-
-    /// Ключ сохранения количества попыток шота
-    private let shotAttemptsKey = "shotAttempts"
+    /// Полный путь к JSON-файлу с настройками банкролла
+    private let bankrollSettingsFileURL: URL
 
     /// Таймер для отслеживания времени и автогенерации
     private var timer: AnyCancellable?
@@ -107,15 +101,18 @@ class RandomizerView: ObservableObject {
     ///   - service: Сервис генерации чисел (по умолчанию `RandomizerService`)
     ///   - autoStartTimer: Запускать ли внутренний таймер сразу после инициализации
     ///   - defaults: Хранилище для персистентного общего времени
+    ///   - bankrollSettingsFileURL: URL JSON-файла настроек банкролла
     ///
     /// Автоматически восстанавливает общее время и генерирует первое число.
     init(
         service: RandomizerServiceProtocol = RandomizerService(),
         autoStartTimer: Bool = true,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        bankrollSettingsFileURL: URL? = nil
     ) {
         self.service = service
         self.defaults = defaults
+        self.bankrollSettingsFileURL = bankrollSettingsFileURL ?? Self.defaultBankrollSettingsFileURL()
 
         state.allTimeDuration = defaults.double(forKey: allTimeDurationKey)
         loadBankrollSettings()
@@ -222,6 +219,12 @@ class RandomizerView: ObservableObject {
         max(0, currentBankrollUSD - requiredBankrollForShot)
     }
 
+    /// Запас банкролла сверх порога в бай-инах верхнего лимита
+    var bankrollReserveForShotInBuyIns: Double {
+        guard shotLimitNL > 0 else { return 0 }
+        return bankrollReserveForShot / Double(shotLimitNL)
+    }
+
     // MARK: - Public Methods
 
     /// Генерирует новое случайное число и обновляет состояние
@@ -313,31 +316,79 @@ class RandomizerView: ObservableObject {
         defaults.set(state.allTimeDuration, forKey: allTimeDurationKey)
     }
 
-    /// Загружает параметры банкролла и шота из `UserDefaults`
+    /// Загружает параметры банкролла и шота из JSON-файла в Documents
     private func loadBankrollSettings() {
-        if defaults.object(forKey: currentBankrollUSDKey) != nil {
-            currentBankrollUSD = max(0, defaults.double(forKey: currentBankrollUSDKey))
-        } else {
-            currentBankrollUSD = 0
-        }
+        do {
+            let settings: BankrollSettingsFileModel
 
-        if defaults.object(forKey: shotLimitNLKey) != nil {
-            shotLimitNL = max(1, defaults.integer(forKey: shotLimitNLKey))
-        } else {
-            shotLimitNL = 25
-        }
+            if FileManager.default.fileExists(atPath: bankrollSettingsFileURL.path) {
+                let data = try Data(contentsOf: bankrollSettingsFileURL)
+                settings = try JSONDecoder().decode(BankrollSettingsFileModel.self, from: data)
+            } else {
+                settings = .defaults
+            }
 
-        if defaults.object(forKey: shotAttemptsKey) != nil {
-            shotAttempts = max(0, defaults.integer(forKey: shotAttemptsKey))
-        } else {
-            shotAttempts = 0
+            applyBankrollSettings(settings)
+            persistBankrollSettings()
+        } catch {
+            applyBankrollSettings(.defaults)
+            persistBankrollSettings()
         }
     }
 
-    /// Сохраняет параметры банкролла и шота в `UserDefaults`
+    /// Сохраняет параметры банкролла и шота в JSON-файл в Documents
     private func persistBankrollSettings() {
-        defaults.set(currentBankrollUSD, forKey: currentBankrollUSDKey)
-        defaults.set(shotLimitNL, forKey: shotLimitNLKey)
-        defaults.set(shotAttempts, forKey: shotAttemptsKey)
+        do {
+            try ensureBankrollSettingsDirectoryExists()
+            let data = try JSONEncoder().encode(currentBankrollSettings())
+            try data.write(to: bankrollSettingsFileURL, options: .atomic)
+        } catch {
+            // Если запись не удалась, оставляем текущее состояние в памяти
+        }
     }
+
+    /// Применяет значения настроек с валидацией границ
+    private func applyBankrollSettings(_ settings: BankrollSettingsFileModel) {
+        currentBankrollUSD = max(0, settings.currentBankrollUSD)
+        shotLimitNL = max(1, settings.shotLimitNL)
+        shotAttempts = max(0, settings.shotAttempts)
+    }
+
+    /// Формирует текущую модель для сохранения в JSON
+    private func currentBankrollSettings() -> BankrollSettingsFileModel {
+        BankrollSettingsFileModel(
+            currentBankrollUSD: currentBankrollUSD,
+            shotLimitNL: shotLimitNL,
+            shotAttempts: shotAttempts
+        )
+    }
+
+    /// Создаёт каталог Documents/Randomizer при необходимости
+    private func ensureBankrollSettingsDirectoryExists() throws {
+        let directory = bankrollSettingsFileURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
+    /// URL файла настроек по умолчанию: ~/Documents/Randomizer/settings.json
+    private static func defaultBankrollSettingsFileURL() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Documents", isDirectory: true)
+            .appendingPathComponent("Randomizer", isDirectory: true)
+            .appendingPathComponent("settings.json", isDirectory: false)
+    }
+}
+
+// MARK: - Bankroll Settings File Model
+
+/// JSON-модель для хранения настроек банкролла
+private struct BankrollSettingsFileModel: Codable {
+    let currentBankrollUSD: Double
+    let shotLimitNL: Int
+    let shotAttempts: Int
+
+    static let defaults = BankrollSettingsFileModel(
+        currentBankrollUSD: 0,
+        shotLimitNL: 25,
+        shotAttempts: 0
+    )
 }

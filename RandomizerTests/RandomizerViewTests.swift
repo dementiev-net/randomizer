@@ -5,7 +5,12 @@ import XCTest
 final class RandomizerViewTests: XCTestCase {
     func testTickIncrementsSessionAndAllTime() {
         let defaults = makeCleanDefaults()
-        let viewModel = RandomizerView(service: MockRandomizerService(), autoStartTimer: false, defaults: defaults)
+        let viewModel = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: defaults,
+            bankrollSettingsFileURL: makeSettingsFileURL()
+        )
 
         XCTAssertEqual(viewModel.state.sessionDuration, 0)
         XCTAssertEqual(viewModel.state.allTimeDuration, 0)
@@ -18,7 +23,12 @@ final class RandomizerViewTests: XCTestCase {
 
     func testTickAutoGeneratesEveryTenSeconds() {
         let service = MockRandomizerService(numbers: [10, 42])
-        let viewModel = RandomizerView(service: service, autoStartTimer: false, defaults: makeCleanDefaults())
+        let viewModel = RandomizerView(
+            service: service,
+            autoStartTimer: false,
+            defaults: makeCleanDefaults(),
+            bankrollSettingsFileURL: makeSettingsFileURL()
+        )
 
         XCTAssertEqual(service.generateCallCount, 1)
 
@@ -32,7 +42,12 @@ final class RandomizerViewTests: XCTestCase {
     }
 
     func testResetSessionResetsOnlySessionDuration() {
-        let viewModel = RandomizerView(service: MockRandomizerService(), autoStartTimer: false, defaults: makeCleanDefaults())
+        let viewModel = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: makeCleanDefaults(),
+            bankrollSettingsFileURL: makeSettingsFileURL()
+        )
 
         for _ in 0..<5 {
             viewModel.tick()
@@ -55,21 +70,36 @@ final class RandomizerViewTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
 
         do {
-            let viewModel = RandomizerView(service: MockRandomizerService(), autoStartTimer: false, defaults: defaults)
+            let viewModel = RandomizerView(
+                service: MockRandomizerService(),
+                autoStartTimer: false,
+                defaults: defaults,
+                bankrollSettingsFileURL: makeSettingsFileURL()
+            )
             for _ in 0..<3 {
                 viewModel.tick()
             }
             XCTAssertEqual(viewModel.state.allTimeDuration, 3)
         }
 
-        let reloaded = RandomizerView(service: MockRandomizerService(), autoStartTimer: false, defaults: defaults)
+        let reloaded = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: defaults,
+            bankrollSettingsFileURL: makeSettingsFileURL()
+        )
         XCTAssertEqual(reloaded.state.allTimeDuration, 3)
 
         defaults.removePersistentDomain(forName: suite)
     }
 
     func testShotAvailabilityUsesBankrollAndLimit() {
-        let viewModel = RandomizerView(service: MockRandomizerService(), autoStartTimer: false, defaults: makeCleanDefaults())
+        let viewModel = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: makeCleanDefaults(),
+            bankrollSettingsFileURL: makeSettingsFileURL()
+        )
 
         viewModel.setShotLimitNL(25)
         viewModel.setCurrentBankrollUSD(624)
@@ -78,17 +108,20 @@ final class RandomizerViewTests: XCTestCase {
         XCTAssertEqual(viewModel.shotBudget, 50)
         XCTAssertEqual(viewModel.missingBankrollForShot, 1)
         XCTAssertEqual(viewModel.bankrollReserveForShot, 0)
+        XCTAssertEqual(viewModel.bankrollReserveForShotInBuyIns, 0)
         XCTAssertFalse(viewModel.canTakeShot)
 
         viewModel.setCurrentBankrollUSD(625)
 
         XCTAssertEqual(viewModel.missingBankrollForShot, 0)
         XCTAssertEqual(viewModel.bankrollReserveForShot, 0)
+        XCTAssertEqual(viewModel.bankrollReserveForShotInBuyIns, 0)
         XCTAssertTrue(viewModel.canTakeShot)
 
         viewModel.setCurrentBankrollUSD(700)
 
         XCTAssertEqual(viewModel.bankrollReserveForShot, 75)
+        XCTAssertEqual(viewModel.bankrollReserveForShotInBuyIns, 3)
         XCTAssertTrue(viewModel.canTakeShot)
     }
 
@@ -98,24 +131,41 @@ final class RandomizerViewTests: XCTestCase {
             return XCTFail("Unable to create suite defaults")
         }
         defaults.removePersistentDomain(forName: suite)
+        let settingsURL = makeSettingsFileURL()
 
         do {
-            let viewModel = RandomizerView(service: MockRandomizerService(), autoStartTimer: false, defaults: defaults)
+            let viewModel = RandomizerView(
+                service: MockRandomizerService(),
+                autoStartTimer: false,
+                defaults: defaults,
+                bankrollSettingsFileURL: settingsURL
+            )
             viewModel.setCurrentBankrollUSD(730)
             viewModel.setShotLimitNL(25)
             viewModel.setShotAttempts(3)
         }
 
-        let reloaded = RandomizerView(service: MockRandomizerService(), autoStartTimer: false, defaults: defaults)
+        let reloaded = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: defaults,
+            bankrollSettingsFileURL: settingsURL
+        )
         XCTAssertEqual(reloaded.currentBankrollUSD, 730)
         XCTAssertEqual(reloaded.shotLimitNL, 25)
         XCTAssertEqual(reloaded.shotAttempts, 3)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: settingsURL.path))
 
         defaults.removePersistentDomain(forName: suite)
     }
 
     func testShotAttemptsCannotGoBelowZero() {
-        let viewModel = RandomizerView(service: MockRandomizerService(), autoStartTimer: false, defaults: makeCleanDefaults())
+        let viewModel = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: makeCleanDefaults(),
+            bankrollSettingsFileURL: makeSettingsFileURL()
+        )
 
         viewModel.setShotAttempts(0)
         viewModel.decrementShotAttempts()
@@ -135,6 +185,13 @@ final class RandomizerViewTests: XCTestCase {
         }
         defaults.removePersistentDomain(forName: suite)
         return defaults
+    }
+
+    private func makeSettingsFileURL() -> URL {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("RandomizerTests.\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent("settings.json", isDirectory: false)
     }
 }
 

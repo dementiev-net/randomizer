@@ -138,7 +138,7 @@ struct ContentView: View {
                     HStack(spacing: 6) {
                         Text(
                             viewModel.canTakeShot ?
-                            "ГОТОВ (\(formatAmount(viewModel.bankrollReserveForShot))$)" :
+                            "ГОТОВ (\(formatBuyIns(viewModel.bankrollReserveForShotInBuyIns)) BI)" :
                             "нужно $\(formatAmount(viewModel.missingBankrollForShot))"
                         )
                             .foregroundColor(viewModel.canTakeShot ? .green : .orange)
@@ -178,6 +178,21 @@ struct ContentView: View {
     /// Форматирует денежное значение до целого без дробной части
     private func formatAmount(_ value: Double) -> String {
         String(Int(value.rounded(.up)))
+    }
+
+    /// Форматирует количество бай-инов (до 2 знаков после запятой)
+    private func formatBuyIns(_ value: Double) -> String {
+        let rounded = (value * 100).rounded() / 100
+
+        if rounded == rounded.rounded() {
+            return String(Int(rounded))
+        }
+
+        if (rounded * 10).rounded() == rounded * 10 {
+            return String(format: "%.1f", rounded)
+        }
+
+        return String(format: "%.2f", rounded)
     }
 }
 
