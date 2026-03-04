@@ -274,7 +274,7 @@ private struct BankrollSettingsSheet: View {
                     }
 
                     GridRow {
-                        Text("Попытки шота")
+                        Text("Попытки шота, BI")
                             .foregroundColor(.gray)
 
                         Stepper(
@@ -282,9 +282,27 @@ private struct BankrollSettingsSheet: View {
                                 get: { viewModel.shotAttempts },
                                 set: { viewModel.setShotAttempts($0) }
                             ),
-                            in: 0...999
+                            in: 1...999
                         ) {
                             Text("\(viewModel.shotAttempts)")
+                                .monospacedDigit()
+                                .frame(minWidth: 40, alignment: .leading)
+                        }
+                        .frame(width: 140, alignment: .leading)
+                    }
+
+                    GridRow {
+                        Text("Порог шота, BI")
+                            .foregroundColor(.gray)
+
+                        Stepper(
+                            value: Binding(
+                                get: { viewModel.shotBankrollThresholdBuyIns },
+                                set: { viewModel.setShotBankrollThresholdBuyIns($0) }
+                            ),
+                            in: 1...999
+                        ) {
+                            Text("\(viewModel.shotBankrollThresholdBuyIns)")
                                 .monospacedDigit()
                                 .frame(minWidth: 40, alignment: .leading)
                         }
@@ -295,15 +313,15 @@ private struct BankrollSettingsSheet: View {
                 Divider()
 
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Порог шота (25 BI): $\(formatAmount(viewModel.requiredBankrollForShot))")
-                    Text("Бюджет шота (2 BI): $\(formatAmount(viewModel.shotBudget))")
+                    Text("Порог шота (\(viewModel.shotBankrollThresholdBuyIns) BI): $\(formatAmount(viewModel.requiredBankrollForShot))")
+                    Text("Бюджет шота (\(viewModel.shotAttempts) BI): $\(formatAmount(viewModel.shotBudget))")
                     Text(
                         "Текущий шот: \(formatSignedAmount(viewModel.currentShotResultUSD))$ " +
                         "(\(formatSignedBuyIns(viewModel.currentShotResultBuyIns)) BI)"
                     )
                     Text(
                         viewModel.isShotLocked ?
-                        "Шот закрыт после -2 BI. Восстановите банкролл до $\(formatAmount(viewModel.requiredBankrollForShot))." :
+                        "Шот закрыт после -\(viewModel.shotAttempts) BI. Восстановите банкролл до $\(formatAmount(viewModel.requiredBankrollForShot))." :
                         viewModel.isShotAvailable ?
                         "Банкролл позволяет делать шот NL\(viewModel.shotLimitNL)." :
                         "До шота NL\(viewModel.shotLimitNL) не хватает $\(formatAmount(viewModel.missingBankrollForShot))."
@@ -336,7 +354,7 @@ private struct BankrollSettingsSheet: View {
                                 .foregroundColor(.gray)
 
                             TextField(
-                                "-50",
+                                "0",
                                 text: $shotResultText
                             )
                             .textFieldStyle(.roundedBorder)
@@ -533,6 +551,8 @@ private struct BankrollSettingsSheet: View {
             applyToBankroll: applyShotResultToBankroll
         )
 
+        // После применения результата к банкроллу синхронизируем отображаемое поле.
+        bankrollText = formatEditableAmount(viewModel.currentBankrollUSD)
         shotResultText = ""
         shotCommentText = ""
     }

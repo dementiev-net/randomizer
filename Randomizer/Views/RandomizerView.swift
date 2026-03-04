@@ -64,8 +64,11 @@ class RandomizerView: ObservableObject {
     /// Лимит для шота (например, 25 для NL25)
     @Published private(set) var shotLimitNL: Int = 25
 
-    /// Количество попыток шота верхнего лимита
-    @Published private(set) var shotAttempts: Int = 0
+    /// Порог банкролла для шота в бай-инах (например, 25 BI)
+    @Published private(set) var shotBankrollThresholdBuyIns: Int = 25
+
+    /// Количество попыток шота в BI (стоп-лосс = -N BI)
+    @Published private(set) var shotAttempts: Int = 2
 
     /// Накопленный результат текущего шота в долларах
     @Published private(set) var currentShotResultUSD: Double = 0
@@ -210,14 +213,14 @@ class RandomizerView: ObservableObject {
         }
     }
 
-    /// Требуемый банкролл для шота (25 BI верхнего лимита)
+    /// Требуемый банкролл для шота (N BI верхнего лимита из настроек)
     var requiredBankrollForShot: Double {
-        Double(shotLimitNL) * 25
+        Double(shotLimitNL) * Double(shotBankrollThresholdBuyIns)
     }
 
-    /// Бюджет шота (2 BI верхнего лимита)
+    /// Бюджет шота (N BI верхнего лимита, где N = попытки шота)
     var shotBudget: Double {
-        Double(shotLimitNL) * 2
+        Double(shotLimitNL) * Double(shotAttempts)
     }
 
     /// Сколько не хватает до минимального банкролла для шота
@@ -301,25 +304,36 @@ class RandomizerView: ObservableObject {
     func setShotLimitNL(_ value: Int) {
         shotLimitNL = max(1, value)
         evaluateAutoUnlockIfNeeded()
+        evaluateShotStopLossIfNeeded()
         persistBankrollSettings()
     }
 
-    /// Обновляет количество попыток шота
+    /// Обновляет порог банкролла для шота в BI
     ///
-    /// - Parameter value: Количество попыток (не меньше 0)
-    func setShotAttempts(_ value: Int) {
-        shotAttempts = max(0, value)
+    /// - Parameter value: Порог в BI (не меньше 1)
+    func setShotBankrollThresholdBuyIns(_ value: Int) {
+        shotBankrollThresholdBuyIns = max(1, value)
+        evaluateAutoUnlockIfNeeded()
         persistBankrollSettings()
     }
 
-    /// Увеличивает счётчик попыток шота на 1
+    /// Обновляет количество попыток шота (стоп-лосс в BI)
+    ///
+    /// - Parameter value: Количество BI (не меньше 1)
+    func setShotAttempts(_ value: Int) {
+        shotAttempts = max(1, value)
+        evaluateShotStopLossIfNeeded()
+        persistBankrollSettings()
+    }
+
+    /// Увеличивает количество попыток шота (BI) на 1
     func incrementShotAttempts() {
         setShotAttempts(shotAttempts + 1)
     }
 
-    /// Уменьшает счётчик попыток шота на 1 (не ниже 0)
+    /// Уменьшает количество попыток шота (BI) на 1 (не ниже 1)
     func decrementShotAttempts() {
-        setShotAttempts(max(0, shotAttempts - 1))
+        setShotAttempts(max(1, shotAttempts - 1))
     }
 
     /// Добавляет новую запись в журнал шотов
@@ -446,16 +460,17 @@ class RandomizerView: ObservableObject {
         }
     }
 
-    /// Проверяет достижение стоп-лосса шота (-2 BI) и блокирует шот при необходимости
+    /// Проверяет достижение стоп-лосса шота (-N BI) и блокирует шот при необходимости
     private func evaluateShotStopLossIfNeeded() {
         guard !isShotLocked else { return }
+        guard shotBudget > 0 else { return }
 
         if currentShotResultUSD <= -shotBudget {
             isShotLocked = true
         }
     }
 
-    /// Автоматически снимает блокировку шота после восстановления банкролла до 25 BI
+    /// Автоматически снимает блокировку шота после восстановления до порога в BI
     private func evaluateAutoUnlockIfNeeded() {
         guard isShotLocked else { return }
 
@@ -469,7 +484,8 @@ class RandomizerView: ObservableObject {
     private func applyBankrollSettings(_ settings: BankrollSettingsFileModel) {
         currentBankrollUSD = max(0, settings.currentBankrollUSD)
         shotLimitNL = max(1, settings.shotLimitNL)
-        shotAttempts = max(0, settings.shotAttempts)
+        shotBankrollThresholdBuyIns = max(1, settings.shotBankrollThresholdBuyIns)
+        shotAttempts = max(1, settings.shotAttempts)
         currentShotResultUSD = settings.currentShotResultUSD
         isShotLocked = settings.isShotLocked
     }
@@ -479,6 +495,7 @@ class RandomizerView: ObservableObject {
         BankrollSettingsFileModel(
             currentBankrollUSD: currentBankrollUSD,
             shotLimitNL: shotLimitNL,
+            shotBankrollThresholdBuyIns: shotBankrollThresholdBuyIns,
             shotAttempts: shotAttempts,
             currentShotResultUSD: currentShotResultUSD,
             isShotLocked: isShotLocked
@@ -532,6 +549,7 @@ class RandomizerView: ObservableObject {
 private struct BankrollSettingsFileModel: Codable {
     let currentBankrollUSD: Double
     let shotLimitNL: Int
+    let shotBankrollThresholdBuyIns: Int
     let shotAttempts: Int
     let currentShotResultUSD: Double
     let isShotLocked: Bool
@@ -539,6 +557,7 @@ private struct BankrollSettingsFileModel: Codable {
     private enum CodingKeys: String, CodingKey {
         case currentBankrollUSD
         case shotLimitNL
+        case shotBankrollThresholdBuyIns
         case shotAttempts
         case currentShotResultUSD
         case isShotLocked
@@ -547,12 +566,14 @@ private struct BankrollSettingsFileModel: Codable {
     init(
         currentBankrollUSD: Double,
         shotLimitNL: Int,
+        shotBankrollThresholdBuyIns: Int,
         shotAttempts: Int,
         currentShotResultUSD: Double,
         isShotLocked: Bool
     ) {
         self.currentBankrollUSD = currentBankrollUSD
         self.shotLimitNL = shotLimitNL
+        self.shotBankrollThresholdBuyIns = shotBankrollThresholdBuyIns
         self.shotAttempts = shotAttempts
         self.currentShotResultUSD = currentShotResultUSD
         self.isShotLocked = isShotLocked
@@ -562,7 +583,8 @@ private struct BankrollSettingsFileModel: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         currentBankrollUSD = try container.decodeIfPresent(Double.self, forKey: .currentBankrollUSD) ?? 0
         shotLimitNL = try container.decodeIfPresent(Int.self, forKey: .shotLimitNL) ?? 25
-        shotAttempts = try container.decodeIfPresent(Int.self, forKey: .shotAttempts) ?? 0
+        shotBankrollThresholdBuyIns = try container.decodeIfPresent(Int.self, forKey: .shotBankrollThresholdBuyIns) ?? 25
+        shotAttempts = try container.decodeIfPresent(Int.self, forKey: .shotAttempts) ?? 2
         currentShotResultUSD = try container.decodeIfPresent(Double.self, forKey: .currentShotResultUSD) ?? 0
         isShotLocked = try container.decodeIfPresent(Bool.self, forKey: .isShotLocked) ?? false
     }
@@ -570,7 +592,8 @@ private struct BankrollSettingsFileModel: Codable {
     static let defaults = BankrollSettingsFileModel(
         currentBankrollUSD: 0,
         shotLimitNL: 25,
-        shotAttempts: 0,
+        shotBankrollThresholdBuyIns: 25,
+        shotAttempts: 2,
         currentShotResultUSD: 0,
         isShotLocked: false
     )

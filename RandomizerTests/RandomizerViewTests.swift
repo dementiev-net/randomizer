@@ -110,6 +110,8 @@ final class RandomizerViewTests: XCTestCase {
         viewModel.setShotLimitNL(25)
         viewModel.setCurrentBankrollUSD(624)
 
+        XCTAssertEqual(viewModel.shotBankrollThresholdBuyIns, 25)
+        XCTAssertEqual(viewModel.shotAttempts, 2)
         XCTAssertEqual(viewModel.requiredBankrollForShot, 625)
         XCTAssertEqual(viewModel.shotBudget, 50)
         XCTAssertEqual(viewModel.missingBankrollForShot, 1)
@@ -150,6 +152,7 @@ final class RandomizerViewTests: XCTestCase {
             )
             viewModel.setCurrentBankrollUSD(730)
             viewModel.setShotLimitNL(25)
+            viewModel.setShotBankrollThresholdBuyIns(30)
             viewModel.setShotAttempts(3)
         }
 
@@ -162,13 +165,14 @@ final class RandomizerViewTests: XCTestCase {
         )
         XCTAssertEqual(reloaded.currentBankrollUSD, 730)
         XCTAssertEqual(reloaded.shotLimitNL, 25)
+        XCTAssertEqual(reloaded.shotBankrollThresholdBuyIns, 30)
         XCTAssertEqual(reloaded.shotAttempts, 3)
         XCTAssertTrue(FileManager.default.fileExists(atPath: settingsURL.path))
 
         defaults.removePersistentDomain(forName: suite)
     }
 
-    func testShotAttemptsCannotGoBelowZero() {
+    func testShotAttemptsCannotGoBelowOne() {
         let viewModel = RandomizerView(
             service: MockRandomizerService(),
             autoStartTimer: false,
@@ -177,15 +181,15 @@ final class RandomizerViewTests: XCTestCase {
             shotJournalFileURL: makeShotJournalFileURL()
         )
 
-        viewModel.setShotAttempts(0)
+        viewModel.setShotAttempts(1)
         viewModel.decrementShotAttempts()
-        XCTAssertEqual(viewModel.shotAttempts, 0)
-
-        viewModel.incrementShotAttempts()
         XCTAssertEqual(viewModel.shotAttempts, 1)
 
+        viewModel.incrementShotAttempts()
+        XCTAssertEqual(viewModel.shotAttempts, 2)
+
         viewModel.setShotAttempts(-5)
-        XCTAssertEqual(viewModel.shotAttempts, 0)
+        XCTAssertEqual(viewModel.shotAttempts, 1)
     }
 
     func testShotJournalEntryPersistsAndUpdatesBankroll() {
@@ -201,6 +205,7 @@ final class RandomizerViewTests: XCTestCase {
             shotJournalFileURL: journalURL
         )
         viewModel.setShotLimitNL(25)
+        viewModel.setShotAttempts(2)
         viewModel.setCurrentBankrollUSD(700)
 
         viewModel.addShotJournalEntry(resultUSD: -50, comment: "неудачный шот", applyToBankroll: true)
@@ -281,6 +286,8 @@ final class RandomizerViewTests: XCTestCase {
             shotJournalFileURL: journalURL
         )
         viewModel.setShotLimitNL(25)
+        viewModel.setShotBankrollThresholdBuyIns(25)
+        viewModel.setShotAttempts(2)
         viewModel.setCurrentBankrollUSD(625)
 
         viewModel.addShotJournalEntry(resultUSD: -50, comment: "", applyToBankroll: true)
@@ -303,6 +310,38 @@ final class RandomizerViewTests: XCTestCase {
         XCTAssertFalse(reloadedLocked.isShotLocked)
         XCTAssertEqual(reloadedLocked.currentShotResultUSD, 0)
         XCTAssertTrue(reloadedLocked.isShotAvailable)
+    }
+
+    func testShotRulesUseConfiguredBuyInSettings() {
+        let viewModel = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: makeCleanDefaults(),
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL()
+        )
+
+        viewModel.setShotLimitNL(25)
+        viewModel.setShotBankrollThresholdBuyIns(30)
+        viewModel.setShotAttempts(3)
+        viewModel.setCurrentBankrollUSD(749)
+
+        XCTAssertEqual(viewModel.requiredBankrollForShot, 750)
+        XCTAssertEqual(viewModel.shotBudget, 75)
+        XCTAssertFalse(viewModel.canTakeShot)
+
+        viewModel.setCurrentBankrollUSD(750)
+        XCTAssertTrue(viewModel.canTakeShot)
+
+        viewModel.addShotJournalEntry(resultUSD: -70, comment: "", applyToBankroll: false)
+        XCTAssertFalse(viewModel.isShotLocked)
+
+        viewModel.addShotJournalEntry(resultUSD: -5, comment: "", applyToBankroll: false)
+        XCTAssertTrue(viewModel.isShotLocked)
+
+        viewModel.setCurrentBankrollUSD(750)
+        XCTAssertFalse(viewModel.isShotLocked)
+        XCTAssertEqual(viewModel.currentShotResultUSD, 0)
     }
 
     private func makeCleanDefaults() -> UserDefaults {
