@@ -27,6 +27,15 @@ enum SessionFatigueState: Equatable {
     case critical
 }
 
+/// Причина блокировки текущей сессии по лимитам
+enum SessionLimitReason: String, Equatable {
+    /// Достигнут лимит потерь
+    case stopLoss
+
+    /// Достигнут лимит прибыли
+    case stopWin
+}
+
 // MARK: - Randomizer View Model
 
 /// ViewModel для управления состоянием генератора случайных чисел
@@ -75,6 +84,18 @@ class RandomizerView: ObservableObject {
 
     /// Флаг блокировки шота после достижения стоп-лосса
     @Published private(set) var isShotLocked: Bool = false
+
+    /// Лимит убытка текущей сессии в долларах (0 = выключен)
+    @Published private(set) var sessionStopLossUSD: Double = 0
+
+    /// Лимит прибыли текущей сессии в долларах (0 = выключен)
+    @Published private(set) var sessionStopWinUSD: Double = 0
+
+    /// Результат текущей сессии в долларах
+    @Published private(set) var sessionResultUSD: Double = 0
+
+    /// Причина блокировки текущей сессии по лимитам
+    @Published private(set) var sessionLimitReason: SessionLimitReason?
 
     /// Журнал шотов (новые записи в начале списка)
     @Published private(set) var shotJournalEntries: [ShotJournalEntry] = []
@@ -269,6 +290,47 @@ class RandomizerView: ObservableObject {
         canTakeShot && !isShotLocked
     }
 
+    /// Заблокирована ли текущая сессия по stop-loss / stop-win
+    var isSessionPlayBlocked: Bool {
+        sessionLimitReason != nil
+    }
+
+    /// Цвет крупного числа на главном экране с учетом лимитов и усталости
+    var randomizerNumberColor: Color {
+        switch sessionLimitReason {
+        case .stopLoss:
+            return .red
+        case .stopWin:
+            return .green
+        case nil:
+            return fatigueState == .normal ? .white : .yellow
+        }
+    }
+
+    /// Текст статуса текущей сессии для главного экрана
+    var sessionStatusText: String? {
+        switch sessionLimitReason {
+        case .stopLoss:
+            return "игра запрещена по stop-loss"
+        case .stopWin:
+            return "stop-win достигнут, сессию лучше завершить"
+        case nil:
+            return fatigueState == .normal ? nil : "отдохни"
+        }
+    }
+
+    /// Цвет текста статуса текущей сессии
+    var sessionStatusColor: Color {
+        switch sessionLimitReason {
+        case .stopLoss:
+            return .red
+        case .stopWin:
+            return .green
+        case nil:
+            return fatigueState == .normal ? .gray : .yellow
+        }
+    }
+
     // MARK: - Public Methods
 
     /// Генерирует новое случайное число и обновляет состояние
@@ -281,6 +343,8 @@ class RandomizerView: ObservableObject {
     /// - Каждые 10 секунд автоматически
     /// - При тапе пользователя по экрану
     func generateNewData() {
+        guard !isSessionPlayBlocked else { return }
+
         let newNumber = service.generateNumber()
         state.currentNumber = newNumber
         state.currentRating = service.calculateRating(for: newNumber)
@@ -289,9 +353,15 @@ class RandomizerView: ObservableObject {
 
     /// Сбрасывает длительность текущей сессии
     ///
-    /// Обнуляет `sessionDuration` без изменения общего времени.
+    /// Обнуляет текущую сессию:
+    /// - таймер сессии
+    /// - результат сессии
+    /// - блокировку по stop-loss / stop-win
     func resetSession() {
         state.sessionDuration = 0
+        sessionResultUSD = 0
+        sessionLimitReason = nil
+        persistBankrollSettings()
     }
 
     /// Сбрасывает общее время использования
@@ -340,6 +410,24 @@ class RandomizerView: ObservableObject {
         persistBankrollSettings()
     }
 
+    /// Обновляет stop-loss текущей сессии в долларах
+    ///
+    /// - Parameter value: Лимит убытка (0 = выключен)
+    func setSessionStopLossUSD(_ value: Double) {
+        sessionStopLossUSD = max(0, value)
+        evaluateSessionLimitsIfNeeded()
+        persistBankrollSettings()
+    }
+
+    /// Обновляет stop-win текущей сессии в долларах
+    ///
+    /// - Parameter value: Лимит прибыли (0 = выключен)
+    func setSessionStopWinUSD(_ value: Double) {
+        sessionStopWinUSD = max(0, value)
+        evaluateSessionLimitsIfNeeded()
+        persistBankrollSettings()
+    }
+
     /// Увеличивает количество попыток шота (BI) на 1
     func incrementShotAttempts() {
         setShotAttempts(shotAttempts + 1)
@@ -369,8 +457,11 @@ class RandomizerView: ObservableObject {
         if !isShotLocked {
             currentShotResultUSD += resultUSD
             evaluateShotStopLossIfNeeded()
-            persistBankrollSettings()
         }
+
+        sessionResultUSD += resultUSD
+        evaluateSessionLimitsIfNeeded()
+        persistBankrollSettings()
 
         let entry = ShotJournalEntry(
             id: UUID(),
@@ -426,10 +517,12 @@ class RandomizerView: ObservableObject {
 
             applyBankrollSettings(settings)
             evaluateAutoUnlockIfNeeded()
+            evaluateSessionLimitsIfNeeded()
             persistBankrollSettings()
         } catch {
             applyBankrollSettings(.defaults)
             evaluateAutoUnlockIfNeeded()
+            evaluateSessionLimitsIfNeeded()
             persistBankrollSettings()
         }
     }
@@ -490,6 +583,30 @@ class RandomizerView: ObservableObject {
         }
     }
 
+    /// Проверяет stop-loss / stop-win текущей сессии и при необходимости блокирует игру
+    private func evaluateSessionLimitsIfNeeded() {
+        guard sessionLimitReason == nil else { return }
+
+        if sessionStopLossUSD > 0, sessionResultUSD <= -sessionStopLossUSD {
+            sessionLimitReason = .stopLoss
+            notificationService.postNotification(
+                id: "session-stoploss-\(UUID().uuidString)",
+                title: "Игра запрещена по stop-loss",
+                body: "Лимит сессии достигнут: \(formatSignedAmount(sessionResultUSD))$."
+            )
+            return
+        }
+
+        if sessionStopWinUSD > 0, sessionResultUSD >= sessionStopWinUSD {
+            sessionLimitReason = .stopWin
+            notificationService.postNotification(
+                id: "session-stopwin-\(UUID().uuidString)",
+                title: "Stop-win достигнут",
+                body: "Зафиксирован результат сессии: \(formatSignedAmount(sessionResultUSD))$."
+            )
+        }
+    }
+
     /// Запрашивает разрешение на локальные уведомления macOS
     private func requestNotificationAuthorizationIfNeeded() {
         notificationService.requestAuthorizationIfNeeded { _ in
@@ -519,6 +636,21 @@ class RandomizerView: ObservableObject {
         }
     }
 
+    private func formatSignedAmount(_ value: Double) -> String {
+        let rounded = (value * 100).rounded() / 100
+        let sign = rounded >= 0 ? "+" : ""
+
+        if rounded == rounded.rounded() {
+            return "\(sign)\(Int(rounded))"
+        }
+
+        if (rounded * 10).rounded() == rounded * 10 {
+            return "\(sign)\(String(format: "%.1f", rounded))"
+        }
+
+        return "\(sign)\(String(format: "%.2f", rounded))"
+    }
+
     /// Автоматически снимает блокировку шота после восстановления до порога в BI
     private func evaluateAutoUnlockIfNeeded() {
         guard isShotLocked else { return }
@@ -537,6 +669,10 @@ class RandomizerView: ObservableObject {
         shotAttempts = max(1, settings.shotAttempts)
         currentShotResultUSD = settings.currentShotResultUSD
         isShotLocked = settings.isShotLocked
+        sessionStopLossUSD = max(0, settings.sessionStopLossUSD)
+        sessionStopWinUSD = max(0, settings.sessionStopWinUSD)
+        sessionResultUSD = settings.sessionResultUSD
+        sessionLimitReason = settings.sessionLimitReason.flatMap { SessionLimitReason(rawValue: $0) }
     }
 
     /// Формирует текущую модель для сохранения в JSON
@@ -547,7 +683,11 @@ class RandomizerView: ObservableObject {
             shotBankrollThresholdBuyIns: shotBankrollThresholdBuyIns,
             shotAttempts: shotAttempts,
             currentShotResultUSD: currentShotResultUSD,
-            isShotLocked: isShotLocked
+            isShotLocked: isShotLocked,
+            sessionStopLossUSD: sessionStopLossUSD,
+            sessionStopWinUSD: sessionStopWinUSD,
+            sessionResultUSD: sessionResultUSD,
+            sessionLimitReason: sessionLimitReason?.rawValue
         )
     }
 

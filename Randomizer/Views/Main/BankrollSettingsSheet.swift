@@ -26,6 +26,12 @@ struct BankrollSettingsSheet: View {
     /// Текстовое значение лимита шота для свободного редактирования
     @State private var shotLimitText = ""
 
+    /// Текстовое значение stop-loss текущей сессии в долларах
+    @State private var sessionStopLossText = ""
+
+    /// Текстовое значение stop-win текущей сессии в долларах
+    @State private var sessionStopWinText = ""
+
     /// Текстовое значение результата записи журнала в долларах
     @State private var shotResultText = ""
 
@@ -37,25 +43,30 @@ struct BankrollSettingsSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            HStack {
+                Text("Настройки банкролла")
+                    .font(.system(size: 16, weight: .semibold))
+
+                Spacer()
+
+                Button {
+                    closeSheet()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Закрыть")
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 12)
+
+            Divider()
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("Настройки банкролла")
-                            .font(.system(size: 16, weight: .semibold))
-
-                        Spacer()
-
-                        Button {
-                            closeSheet()
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Закрыть")
-                    }
-
                     Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 10) {
                         GridRow {
                             Text("Банкролл, $")
@@ -125,6 +136,36 @@ struct BankrollSettingsSheet: View {
                             }
                             .frame(width: 140, alignment: .leading)
                         }
+
+                        GridRow {
+                            Text("Stop-loss, $")
+                                .foregroundColor(.gray)
+
+                            TextField("0", text: $sessionStopLossText)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 140)
+                                .onChange(of: sessionStopLossText) { _, newValue in
+                                    handleSessionStopLossInputChange(newValue)
+                                }
+                                .onSubmit {
+                                    commitSessionStopLossInput()
+                                }
+                        }
+
+                        GridRow {
+                            Text("Stop-win, $")
+                                .foregroundColor(.gray)
+
+                            TextField("0", text: $sessionStopWinText)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 140)
+                                .onChange(of: sessionStopWinText) { _, newValue in
+                                    handleSessionStopWinInputChange(newValue)
+                                }
+                                .onSubmit {
+                                    commitSessionStopWinInput()
+                                }
+                        }
                     }
 
                     Divider()
@@ -135,6 +176,13 @@ struct BankrollSettingsSheet: View {
                         Text(
                             "Текущий шот: \(formatSignedAmount(viewModel.currentShotResultUSD))$ " +
                             "(\(formatSignedBuyIns(viewModel.currentShotResultBuyIns)) BI)"
+                        )
+                        Text(
+                            "Результат сессии: \(formatSignedAmount(viewModel.sessionResultUSD))$"
+                        )
+                        Text(
+                            "Лимиты сессии: stop-loss \(formatAmount(viewModel.sessionStopLossUSD))$ / " +
+                            "stop-win \(formatAmount(viewModel.sessionStopWinUSD))$"
                         )
                         Text(
                             viewModel.isShotLocked
@@ -149,6 +197,9 @@ struct BankrollSettingsSheet: View {
                             : (viewModel.isShotAvailable ? .green : .orange)
                         )
                         .fontWeight(.semibold)
+                        Text(sessionLimitStatusText)
+                            .foregroundColor(sessionLimitStatusColor)
+                            .fontWeight(.semibold)
                     }
                     .font(.system(size: 12))
 
@@ -225,6 +276,8 @@ struct BankrollSettingsSheet: View {
         .onAppear {
             bankrollText = formatEditableAmount(viewModel.currentBankrollUSD)
             shotLimitText = String(viewModel.shotLimitNL)
+            sessionStopLossText = formatEditableAmount(viewModel.sessionStopLossUSD)
+            sessionStopWinText = formatEditableAmount(viewModel.sessionStopWinUSD)
             shotResultText = ""
             shotCommentText = ""
             applyShotResultToBankroll = true
@@ -290,6 +343,38 @@ struct BankrollSettingsSheet: View {
         viewModel.setShotLimitNL(value)
     }
 
+    private func handleSessionStopLossInputChange(_ newValue: String) {
+        let sanitized = sanitizeDecimalInput(newValue)
+        guard sanitized == newValue else {
+            sessionStopLossText = sanitized
+            return
+        }
+
+        guard !sanitized.isEmpty else {
+            viewModel.setSessionStopLossUSD(0)
+            return
+        }
+
+        guard let value = Double(sanitized) else { return }
+        viewModel.setSessionStopLossUSD(value)
+    }
+
+    private func handleSessionStopWinInputChange(_ newValue: String) {
+        let sanitized = sanitizeDecimalInput(newValue)
+        guard sanitized == newValue else {
+            sessionStopWinText = sanitized
+            return
+        }
+
+        guard !sanitized.isEmpty else {
+            viewModel.setSessionStopWinUSD(0)
+            return
+        }
+
+        guard let value = Double(sanitized) else { return }
+        viewModel.setSessionStopWinUSD(value)
+    }
+
     private func commitBankrollInput() {
         let text = sanitizeDecimalInput(bankrollText)
         if text.isEmpty {
@@ -321,6 +406,40 @@ struct BankrollSettingsSheet: View {
 
         viewModel.setShotLimitNL(value)
         shotLimitText = String(viewModel.shotLimitNL)
+    }
+
+    private func commitSessionStopLossInput() {
+        let text = sanitizeDecimalInput(sessionStopLossText)
+        guard !text.isEmpty else {
+            viewModel.setSessionStopLossUSD(0)
+            sessionStopLossText = "0"
+            return
+        }
+
+        guard let value = Double(text) else {
+            sessionStopLossText = formatEditableAmount(viewModel.sessionStopLossUSD)
+            return
+        }
+
+        viewModel.setSessionStopLossUSD(value)
+        sessionStopLossText = formatEditableAmount(viewModel.sessionStopLossUSD)
+    }
+
+    private func commitSessionStopWinInput() {
+        let text = sanitizeDecimalInput(sessionStopWinText)
+        guard !text.isEmpty else {
+            viewModel.setSessionStopWinUSD(0)
+            sessionStopWinText = "0"
+            return
+        }
+
+        guard let value = Double(text) else {
+            sessionStopWinText = formatEditableAmount(viewModel.sessionStopWinUSD)
+            return
+        }
+
+        viewModel.setSessionStopWinUSD(value)
+        sessionStopWinText = formatEditableAmount(viewModel.sessionStopWinUSD)
     }
 
     private var canCommitShotJournalEntry: Bool {
@@ -415,11 +534,35 @@ struct BankrollSettingsSheet: View {
     private func closeSheet(openJournal: Bool = false) {
         commitBankrollInput()
         commitShotLimitInput()
+        commitSessionStopLossInput()
+        commitSessionStopWinInput()
         dismiss()
 
         guard openJournal else { return }
         DispatchQueue.main.async {
             openWindow(id: AppWindowID.shotJournal)
+        }
+    }
+
+    private var sessionLimitStatusText: String {
+        switch viewModel.sessionLimitReason {
+        case .stopLoss:
+            return "Сессия остановлена по stop-loss."
+        case .stopWin:
+            return "Сессия завершена по stop-win."
+        case nil:
+            return "Сессия активна."
+        }
+    }
+
+    private var sessionLimitStatusColor: Color {
+        switch viewModel.sessionLimitReason {
+        case .stopLoss:
+            return .red
+        case .stopWin:
+            return .green
+        case nil:
+            return .gray
         }
     }
 }

@@ -131,6 +131,74 @@ final class RandomizerViewTests: XCTestCase {
         )
     }
 
+    func testSessionStopLossBlocksGenerationUntilReset() {
+        let service = MockRandomizerService(numbers: [11, 22, 33])
+        let notifications = MockNotificationService()
+        let viewModel = RandomizerView(
+            service: service,
+            notificationService: notifications,
+            autoStartTimer: false,
+            defaults: makeCleanDefaults(),
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL()
+        )
+
+        viewModel.setShotAttempts(10)
+        viewModel.setSessionStopLossUSD(50)
+        viewModel.addShotJournalEntry(resultUSD: -30, comment: "", applyToBankroll: false)
+        viewModel.addShotJournalEntry(resultUSD: -20, comment: "", applyToBankroll: false)
+
+        XCTAssertEqual(viewModel.sessionResultUSD, -50)
+        XCTAssertEqual(viewModel.sessionLimitReason, .stopLoss)
+        XCTAssertTrue(viewModel.isSessionPlayBlocked)
+        XCTAssertEqual(
+            notifications.notifications.filter { $0.title == "Игра запрещена по stop-loss" }.count,
+            1
+        )
+
+        XCTAssertEqual(service.generateCallCount, 1)
+        viewModel.generateNewData()
+        XCTAssertEqual(service.generateCallCount, 1)
+
+        viewModel.resetSession()
+        XCTAssertEqual(viewModel.sessionResultUSD, 0)
+        XCTAssertNil(viewModel.sessionLimitReason)
+        XCTAssertFalse(viewModel.isSessionPlayBlocked)
+
+        viewModel.generateNewData()
+        XCTAssertEqual(service.generateCallCount, 2)
+    }
+
+    func testSessionStopWinBlocksGenerationUntilReset() {
+        let service = MockRandomizerService(numbers: [44, 55, 66])
+        let notifications = MockNotificationService()
+        let viewModel = RandomizerView(
+            service: service,
+            notificationService: notifications,
+            autoStartTimer: false,
+            defaults: makeCleanDefaults(),
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL()
+        )
+
+        viewModel.setShotAttempts(10)
+        viewModel.setSessionStopWinUSD(100)
+        viewModel.addShotJournalEntry(resultUSD: 40, comment: "", applyToBankroll: false)
+        viewModel.addShotJournalEntry(resultUSD: 60, comment: "", applyToBankroll: false)
+
+        XCTAssertEqual(viewModel.sessionResultUSD, 100)
+        XCTAssertEqual(viewModel.sessionLimitReason, .stopWin)
+        XCTAssertTrue(viewModel.isSessionPlayBlocked)
+        XCTAssertEqual(
+            notifications.notifications.filter { $0.title == "Stop-win достигнут" }.count,
+            1
+        )
+
+        XCTAssertEqual(service.generateCallCount, 1)
+        viewModel.generateNewData()
+        XCTAssertEqual(service.generateCallCount, 1)
+    }
+
     func testShotAvailabilityUsesBankrollAndLimit() {
         let viewModel = RandomizerView(
             service: MockRandomizerService(),
@@ -187,6 +255,9 @@ final class RandomizerViewTests: XCTestCase {
             viewModel.setShotLimitNL(25)
             viewModel.setShotBankrollThresholdBuyIns(30)
             viewModel.setShotAttempts(3)
+            viewModel.setSessionStopLossUSD(120)
+            viewModel.setSessionStopWinUSD(240)
+            viewModel.addShotJournalEntry(resultUSD: 40, comment: "", applyToBankroll: false)
         }
 
         let reloaded = RandomizerView(
@@ -200,6 +271,10 @@ final class RandomizerViewTests: XCTestCase {
         XCTAssertEqual(reloaded.shotLimitNL, 25)
         XCTAssertEqual(reloaded.shotBankrollThresholdBuyIns, 30)
         XCTAssertEqual(reloaded.shotAttempts, 3)
+        XCTAssertEqual(reloaded.sessionStopLossUSD, 120)
+        XCTAssertEqual(reloaded.sessionStopWinUSD, 240)
+        XCTAssertEqual(reloaded.sessionResultUSD, 40)
+        XCTAssertNil(reloaded.sessionLimitReason)
         XCTAssertTrue(FileManager.default.fileExists(atPath: settingsURL.path))
 
         defaults.removePersistentDomain(forName: suite)

@@ -44,9 +44,17 @@ struct ContentView: View {
                 .font(.custom("HelveticaNeue-Bold", size: 150))
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
-                .foregroundColor(.white)
+                .foregroundColor(viewModel.randomizerNumberColor)
                 .contentShape(Rectangle())
                 .shadow(color: .black.opacity(0.5), radius: 2, x: 0, y: 1)
+
+            if let statusText = viewModel.sessionStatusText {
+                Text(statusText)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(viewModel.sessionStatusColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
 
             RatingView(level: viewModel.state.currentRating, activeColor: viewModel.barColor)
                 .padding(.horizontal, 20)
@@ -156,6 +164,7 @@ struct ContentView: View {
             BankrollSettingsSheet(viewModel: viewModel)
         }
         .onTapGesture {
+            guard !viewModel.isSessionPlayBlocked else { return }
             let generator = NSHapticFeedbackManager.defaultPerformer
             generator.perform(.alignment, performanceTime: .now)
             viewModel.generateNewData()
