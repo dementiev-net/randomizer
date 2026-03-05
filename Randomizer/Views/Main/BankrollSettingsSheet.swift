@@ -102,69 +102,87 @@ struct BankrollSettingsSheet: View {
                         }
 
                         GridRow {
-                            Text("Попытки шота, BI")
+                            Text("Шот, BI")
                                 .foregroundColor(.gray)
 
-                            Stepper(
-                                value: Binding(
-                                    get: { viewModel.shotAttempts },
-                                    set: { viewModel.setShotAttempts($0) }
-                                ),
-                                in: 1...999
-                            ) {
-                                Text("\(viewModel.shotAttempts)")
-                                    .monospacedDigit()
-                                    .frame(minWidth: 40, alignment: .leading)
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Попытки")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.gray)
+
+                                    Stepper(
+                                        value: Binding(
+                                            get: { viewModel.shotAttempts },
+                                            set: { viewModel.setShotAttempts($0) }
+                                        ),
+                                        in: 1...999
+                                    ) {
+                                        Text("\(viewModel.shotAttempts)")
+                                            .monospacedDigit()
+                                            .frame(minWidth: 40, alignment: .leading)
+                                    }
+                                    .frame(width: 110, alignment: .leading)
+                                }
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Порог")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.gray)
+
+                                    Stepper(
+                                        value: Binding(
+                                            get: { viewModel.shotBankrollThresholdBuyIns },
+                                            set: { viewModel.setShotBankrollThresholdBuyIns($0) }
+                                        ),
+                                        in: 1...999
+                                    ) {
+                                        Text("\(viewModel.shotBankrollThresholdBuyIns)")
+                                            .monospacedDigit()
+                                            .frame(minWidth: 40, alignment: .leading)
+                                    }
+                                    .frame(width: 110, alignment: .leading)
+                                }
                             }
-                            .frame(width: 140, alignment: .leading)
                         }
 
                         GridRow {
-                            Text("Порог шота, BI")
+                            Text("Лимиты, $")
                                 .foregroundColor(.gray)
 
-                            Stepper(
-                                value: Binding(
-                                    get: { viewModel.shotBankrollThresholdBuyIns },
-                                    set: { viewModel.setShotBankrollThresholdBuyIns($0) }
-                                ),
-                                in: 1...999
-                            ) {
-                                Text("\(viewModel.shotBankrollThresholdBuyIns)")
-                                    .monospacedDigit()
-                                    .frame(minWidth: 40, alignment: .leading)
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Stop-loss")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.gray)
+
+                                    TextField("0", text: $sessionStopLossText)
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 110)
+                                        .onChange(of: sessionStopLossText) { _, newValue in
+                                            handleSessionStopLossInputChange(newValue)
+                                        }
+                                        .onSubmit {
+                                            commitSessionStopLossInput()
+                                        }
+                                }
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Stop-win")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.gray)
+
+                                    TextField("0", text: $sessionStopWinText)
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 110)
+                                        .onChange(of: sessionStopWinText) { _, newValue in
+                                            handleSessionStopWinInputChange(newValue)
+                                        }
+                                        .onSubmit {
+                                            commitSessionStopWinInput()
+                                        }
+                                }
                             }
-                            .frame(width: 140, alignment: .leading)
-                        }
-
-                        GridRow {
-                            Text("Stop-loss, $")
-                                .foregroundColor(.gray)
-
-                            TextField("0", text: $sessionStopLossText)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 140)
-                                .onChange(of: sessionStopLossText) { _, newValue in
-                                    handleSessionStopLossInputChange(newValue)
-                                }
-                                .onSubmit {
-                                    commitSessionStopLossInput()
-                                }
-                        }
-
-                        GridRow {
-                            Text("Stop-win, $")
-                                .foregroundColor(.gray)
-
-                            TextField("0", text: $sessionStopWinText)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 140)
-                                .onChange(of: sessionStopWinText) { _, newValue in
-                                    handleSessionStopWinInputChange(newValue)
-                                }
-                                .onSubmit {
-                                    commitSessionStopWinInput()
-                                }
                         }
                     }
 
