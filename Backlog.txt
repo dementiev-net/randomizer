@@ -8,3 +8,7 @@ Request Randomizer Shot Management (2026-03-04)
 Request Randomizer Quality (2026-03-04)
 [x] P1 tests: добавить unit-тесты для правил шота и расчета порогов
 [x] P2 docs: описать логику 25 BI / 2 BI и статусы готовности шота в README
+
+Request Randomizer Decision Flow (2026-03-05)
+[ ] P1 randomizer: добавить кастомные границы диапазонов для нижнего индикатора (настраиваемые пресеты частот)
+[ ] P1 session: добавить жесткий режим stop-loss (блокировка роллов на N минут + таймер перерыва)
