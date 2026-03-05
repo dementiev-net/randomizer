@@ -266,7 +266,7 @@ class RandomizerView: ObservableObject {
 
     // MARK: - Fatigue Monitoring
 
-    /// Проверяет уровень усталости на основе общего времени использования
+    /// Проверяет уровень усталости на основе времени текущей сессии
     ///
     /// Обновляет `fatigueState` в зависимости от пройденного времени:
     /// - < warning: normal
@@ -276,9 +276,9 @@ class RandomizerView: ObservableObject {
         let previousState = fatigueState
         let nextState: SessionFatigueState
 
-        if state.allTimeDuration >= criticalThreshold {
+        if state.sessionDuration >= criticalThreshold {
             nextState = .critical
-        } else if state.allTimeDuration >= warningThreshold {
+        } else if state.sessionDuration >= warningThreshold {
             nextState = .warning
         } else {
             nextState = .normal
@@ -299,6 +299,8 @@ class RandomizerView: ObservableObject {
     /// - **warning**: оранжевый
     /// - **critical**: красный
     var timerColor: Color {
+        guard isFatigueHighlightVisible else { return .gray }
+
         switch fatigueState {
         case .normal: return .gray
         case .warning: return .orange
@@ -451,6 +453,7 @@ class RandomizerView: ObservableObject {
         sessionLimitReason = nil
         stopLossBlockUntil = nil
         isRestStatusDismissed = true
+        checkFatigue()
         persistBankrollSettings()
     }
 

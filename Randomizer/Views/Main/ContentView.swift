@@ -89,7 +89,7 @@ struct ContentView: View {
                     HStack(spacing: 4) {
                         Text("Все время")
 
-                        if viewModel.fatigueState != .normal {
+                        if viewModel.isFatigueHighlightVisible {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.system(size: 9))
                         }
@@ -102,10 +102,15 @@ struct ContentView: View {
                         Text(TimeHelper.format(seconds: viewModel.state.allTimeDuration))
                             .foregroundColor(viewModel.timerColor)
                             .monospacedDigit()
-                            .fontWeight(viewModel.fatigueState == .normal ? .regular : .bold)
-                            .opacity(viewModel.fatigueState == .critical && isPulsing ? 0.5 : 1.0)
+                            .fontWeight(viewModel.isFatigueHighlightVisible ? .bold : .regular)
+                            .opacity(
+                                viewModel.isFatigueHighlightVisible
+                                && viewModel.fatigueState == .critical
+                                && isPulsing ? 0.5 : 1.0
+                            )
                             .animation(
-                                viewModel.fatigueState == .critical
+                                viewModel.isFatigueHighlightVisible
+                                && viewModel.fatigueState == .critical
                                 ? Animation.easeInOut(duration: 1.0).repeatForever(autoreverses: true)
                                 : .default,
                                 value: isPulsing
@@ -132,7 +137,7 @@ struct ContentView: View {
                             viewModel.isShotLocked
                             ? "ШОТ ЗАКРЫТ"
                             : viewModel.isShotAvailable
-                            ? "ГОТОВ (\(formatBuyIns(viewModel.bankrollReserveForShotInBuyIns)) BI)"
+                            ? "ГОТОВ +\(formatBuyIns(viewModel.bankrollReserveForShotInBuyIns)) BI"
                             : "нужно $\(formatAmount(viewModel.missingBankrollForShot))"
                         )
                         .foregroundColor(
@@ -179,16 +184,12 @@ struct ContentView: View {
     }
 
     private func formatBuyIns(_ value: Double) -> String {
-        let rounded = (value * 100).rounded() / 100
+        let rounded = (value * 10).rounded() / 10
 
         if rounded == rounded.rounded() {
             return String(Int(rounded))
         }
 
-        if (rounded * 10).rounded() == rounded * 10 {
-            return String(format: "%.1f", rounded)
-        }
-
-        return String(format: "%.2f", rounded)
+        return String(format: "%.1f", rounded)
     }
 }

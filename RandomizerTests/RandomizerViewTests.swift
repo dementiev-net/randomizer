@@ -74,7 +74,7 @@ final class RandomizerViewTests: XCTestCase {
             shotJournalFileURL: makeShotJournalFileURL()
         )
 
-        viewModel.state.allTimeDuration = 3_599
+        viewModel.state.sessionDuration = 3_599
         viewModel.tick()
         XCTAssertEqual(viewModel.fatigueState, .warning)
         XCTAssertEqual(viewModel.sessionStatusText, "отдохни")
@@ -82,7 +82,7 @@ final class RandomizerViewTests: XCTestCase {
 
         viewModel.resetSession()
         XCTAssertEqual(viewModel.sessionStatusText, nil)
-        XCTAssertEqual(viewModel.fatigueState, .warning)
+        XCTAssertEqual(viewModel.fatigueState, .normal)
         XCTAssertFalse(viewModel.isFatigueHighlightVisible)
     }
 
@@ -200,7 +200,7 @@ final class RandomizerViewTests: XCTestCase {
             0
         )
 
-        viewModel.state.allTimeDuration = 3_599
+        viewModel.state.sessionDuration = 3_599
         viewModel.tick()
         XCTAssertEqual(viewModel.fatigueState, .warning)
         XCTAssertEqual(
