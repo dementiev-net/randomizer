@@ -358,7 +358,7 @@ class RandomizerView: ObservableObject {
             }
             return "игра запрещена по stop-loss"
         case .stopWin:
-            return "stop-win достигнут, сессию лучше завершить"
+            return "stop-win достигнут"
         case nil:
             return fatigueState == .normal ? nil : "отдохни"
         }

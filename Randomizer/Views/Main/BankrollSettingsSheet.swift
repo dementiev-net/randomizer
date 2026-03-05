@@ -561,6 +561,10 @@ struct BankrollSettingsSheet: View {
     }
 
     private func commitShotJournalEntry() {
+        // Гарантируем, что лимиты применены даже если поле еще в фокусе.
+        commitSessionStopLossInput()
+        commitSessionStopWinInput()
+
         guard let amount = parseSignedAmount(shotResultText), amount != 0 else { return }
 
         viewModel.addShotJournalEntry(
