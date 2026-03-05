@@ -13,9 +13,14 @@ struct BankrollSettingsFileModel: Codable {
     let shotLimitNL: Int
     let shotBankrollThresholdBuyIns: Int
     let shotAttempts: Int
+    let randomizerLowUpperBound: Int
+    let randomizerMidUpperBound: Int
     let currentShotResultUSD: Double
     let isShotLocked: Bool
     let sessionStopLossUSD: Double
+    let hardStopLossEnabled: Bool
+    let hardStopLossBreakMinutes: Int
+    let stopLossBlockUntil: Date?
     let sessionStopWinUSD: Double
     let sessionResultUSD: Double
     let sessionLimitReason: String?
@@ -25,9 +30,14 @@ struct BankrollSettingsFileModel: Codable {
         case shotLimitNL
         case shotBankrollThresholdBuyIns
         case shotAttempts
+        case randomizerLowUpperBound
+        case randomizerMidUpperBound
         case currentShotResultUSD
         case isShotLocked
         case sessionStopLossUSD
+        case hardStopLossEnabled
+        case hardStopLossBreakMinutes
+        case stopLossBlockUntil
         case sessionStopWinUSD
         case sessionResultUSD
         case sessionLimitReason
@@ -38,9 +48,14 @@ struct BankrollSettingsFileModel: Codable {
         shotLimitNL: Int,
         shotBankrollThresholdBuyIns: Int,
         shotAttempts: Int,
+        randomizerLowUpperBound: Int,
+        randomizerMidUpperBound: Int,
         currentShotResultUSD: Double,
         isShotLocked: Bool,
         sessionStopLossUSD: Double,
+        hardStopLossEnabled: Bool,
+        hardStopLossBreakMinutes: Int,
+        stopLossBlockUntil: Date?,
         sessionStopWinUSD: Double,
         sessionResultUSD: Double,
         sessionLimitReason: String?
@@ -49,9 +64,14 @@ struct BankrollSettingsFileModel: Codable {
         self.shotLimitNL = shotLimitNL
         self.shotBankrollThresholdBuyIns = shotBankrollThresholdBuyIns
         self.shotAttempts = shotAttempts
+        self.randomizerLowUpperBound = randomizerLowUpperBound
+        self.randomizerMidUpperBound = randomizerMidUpperBound
         self.currentShotResultUSD = currentShotResultUSD
         self.isShotLocked = isShotLocked
         self.sessionStopLossUSD = sessionStopLossUSD
+        self.hardStopLossEnabled = hardStopLossEnabled
+        self.hardStopLossBreakMinutes = hardStopLossBreakMinutes
+        self.stopLossBlockUntil = stopLossBlockUntil
         self.sessionStopWinUSD = sessionStopWinUSD
         self.sessionResultUSD = sessionResultUSD
         self.sessionLimitReason = sessionLimitReason
@@ -63,9 +83,14 @@ struct BankrollSettingsFileModel: Codable {
         shotLimitNL = try container.decodeIfPresent(Int.self, forKey: .shotLimitNL) ?? 25
         shotBankrollThresholdBuyIns = try container.decodeIfPresent(Int.self, forKey: .shotBankrollThresholdBuyIns) ?? 25
         shotAttempts = try container.decodeIfPresent(Int.self, forKey: .shotAttempts) ?? 2
+        randomizerLowUpperBound = try container.decodeIfPresent(Int.self, forKey: .randomizerLowUpperBound) ?? 33
+        randomizerMidUpperBound = try container.decodeIfPresent(Int.self, forKey: .randomizerMidUpperBound) ?? 66
         currentShotResultUSD = try container.decodeIfPresent(Double.self, forKey: .currentShotResultUSD) ?? 0
         isShotLocked = try container.decodeIfPresent(Bool.self, forKey: .isShotLocked) ?? false
         sessionStopLossUSD = try container.decodeIfPresent(Double.self, forKey: .sessionStopLossUSD) ?? 0
+        hardStopLossEnabled = try container.decodeIfPresent(Bool.self, forKey: .hardStopLossEnabled) ?? false
+        hardStopLossBreakMinutes = try container.decodeIfPresent(Int.self, forKey: .hardStopLossBreakMinutes) ?? 15
+        stopLossBlockUntil = try container.decodeIfPresent(Date.self, forKey: .stopLossBlockUntil)
         sessionStopWinUSD = try container.decodeIfPresent(Double.self, forKey: .sessionStopWinUSD) ?? 0
         sessionResultUSD = try container.decodeIfPresent(Double.self, forKey: .sessionResultUSD) ?? 0
         sessionLimitReason = try container.decodeIfPresent(String.self, forKey: .sessionLimitReason)
@@ -76,9 +101,14 @@ struct BankrollSettingsFileModel: Codable {
         shotLimitNL: 25,
         shotBankrollThresholdBuyIns: 25,
         shotAttempts: 2,
+        randomizerLowUpperBound: 33,
+        randomizerMidUpperBound: 66,
         currentShotResultUSD: 0,
         isShotLocked: false,
         sessionStopLossUSD: 0,
+        hardStopLossEnabled: false,
+        hardStopLossBreakMinutes: 15,
+        stopLossBlockUntil: nil,
         sessionStopWinUSD: 0,
         sessionResultUSD: 0,
         sessionLimitReason: nil

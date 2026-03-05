@@ -13,7 +13,7 @@ import SwiftUI
 ///
 /// Отображает:
 /// - Крупное случайное число (000-099)
-/// - Нижний индикатор в виде 3 ступеней (по ~33%)
+/// - Нижний индикатор в виде 3 ступеней (с настраиваемыми границами)
 /// - Таймеры текущей сессии и общего времени использования
 /// - Индикаторы усталости при длительном использовании
 ///
@@ -56,7 +56,7 @@ struct ContentView: View {
                     .minimumScaleFactor(0.8)
             }
 
-            RatingView(number: viewModel.state.currentNumber, activeColor: viewModel.barColor)
+            RatingView(activeSegment: viewModel.currentRandomizerSegment, activeColor: viewModel.barColor)
                 .padding(.horizontal, 20)
                 .padding(.bottom, 5)
 

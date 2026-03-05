@@ -11,38 +11,24 @@ import SwiftUI
 
 /// Визуальное представление рейтинга в виде горизонтальных полосок
 ///
-/// Отображает число 0-99 в виде 3 дискретных плашек по ~33%.
+/// Отображает 3 дискретные плашки нижнего индикатора.
 /// Активна только одна плашка текущего диапазона (низ/середина/верх),
 /// неактивные - полупрозрачным серым.
 ///
 /// Пример использования:
 /// ```swift
-/// RatingView(number: 22, activeColor: Color(red: 0.45, green: 0.48, blue: 0.53))
-/// RatingView(number: 88, activeColor: Color(red: 0.95, green: 0.97, blue: 0.99))
+/// RatingView(activeSegment: 1, activeColor: Color(red: 0.45, green: 0.48, blue: 0.53))
+/// RatingView(activeSegment: 3, activeColor: Color(red: 0.95, green: 0.97, blue: 0.99))
 /// ```
 struct RatingView: View {
 
-    /// Текущее число рандомайзера (0-99)
-    let number: Int
+    /// Текущий активный сегмент (1...3)
+    let activeSegment: Int
 
     /// Цвет активных полосок
     ///
-    /// Подбирается по диапазонам:
-    /// - 0-33: сероватый
-    /// - 34-66: светло-серо-голубой
-    /// - 67-99: почти белый
+    /// Подбирается по текущему диапазону во ViewModel.
     let activeColor: Color
-
-    private var activeSegment: Int {
-        switch number {
-        case ...33:
-            return 1
-        case 34...66:
-            return 2
-        default:
-            return 3
-        }
-    }
 
     var body: some View {
         HStack(spacing: 4) {

@@ -169,6 +169,55 @@ final class RandomizerViewTests: XCTestCase {
         XCTAssertEqual(service.generateCallCount, 2)
     }
 
+    func testHardStopLossBreakAutoResetsSessionAfterTimeout() {
+        let clock = TestClock(now: Date(timeIntervalSince1970: 1_700_000_000))
+        let service = MockRandomizerService(numbers: [11, 22, 33])
+        let notifications = MockNotificationService()
+        let viewModel = RandomizerView(
+            service: service,
+            notificationService: notifications,
+            autoStartTimer: false,
+            defaults: makeCleanDefaults(),
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL(),
+            currentDateProvider: { clock.now }
+        )
+
+        viewModel.setShotAttempts(10)
+        viewModel.setHardStopLossEnabled(true)
+        viewModel.setHardStopLossBreakMinutes(1)
+        viewModel.setSessionStopLossUSD(50)
+        viewModel.addShotJournalEntry(resultUSD: -50, comment: "", applyToBankroll: false)
+
+        XCTAssertEqual(viewModel.sessionLimitReason, .stopLoss)
+        XCTAssertTrue(viewModel.isHardStopLossBreakActive)
+        XCTAssertEqual(viewModel.hardStopLossBreakRemainingSeconds, 60)
+        XCTAssertEqual(
+            notifications.notifications.filter { $0.title == "Игра запрещена по stop-loss" }.count,
+            1
+        )
+
+        let callsBeforeManualGenerate = service.generateCallCount
+        viewModel.generateNewData()
+        XCTAssertEqual(service.generateCallCount, callsBeforeManualGenerate)
+
+        clock.advance(by: 59)
+        viewModel.tick()
+        XCTAssertTrue(viewModel.isHardStopLossBreakActive)
+        XCTAssertEqual(viewModel.sessionLimitReason, .stopLoss)
+
+        clock.advance(by: 1)
+        viewModel.tick()
+        XCTAssertFalse(viewModel.isHardStopLossBreakActive)
+        XCTAssertNil(viewModel.sessionLimitReason)
+        XCTAssertEqual(viewModel.sessionResultUSD, 0)
+        XCTAssertFalse(viewModel.isSessionPlayBlocked)
+        XCTAssertEqual(
+            notifications.notifications.filter { $0.title == "Перерыв завершён" }.count,
+            1
+        )
+    }
+
     func testSessionStopWinBlocksGenerationUntilReset() {
         let service = MockRandomizerService(numbers: [44, 55, 66])
         let notifications = MockNotificationService()
@@ -255,8 +304,11 @@ final class RandomizerViewTests: XCTestCase {
             viewModel.setShotLimitNL(25)
             viewModel.setShotBankrollThresholdBuyIns(30)
             viewModel.setShotAttempts(3)
+            viewModel.setRandomizerRangeBoundaries(lowUpperBound: 25, midUpperBound: 75)
             viewModel.setSessionStopLossUSD(120)
             viewModel.setSessionStopWinUSD(240)
+            viewModel.setHardStopLossEnabled(true)
+            viewModel.setHardStopLossBreakMinutes(20)
             viewModel.addShotJournalEntry(resultUSD: 40, comment: "", applyToBankroll: false)
         }
 
@@ -271,13 +323,76 @@ final class RandomizerViewTests: XCTestCase {
         XCTAssertEqual(reloaded.shotLimitNL, 25)
         XCTAssertEqual(reloaded.shotBankrollThresholdBuyIns, 30)
         XCTAssertEqual(reloaded.shotAttempts, 3)
+        XCTAssertEqual(reloaded.randomizerLowUpperBound, 25)
+        XCTAssertEqual(reloaded.randomizerMidUpperBound, 75)
         XCTAssertEqual(reloaded.sessionStopLossUSD, 120)
         XCTAssertEqual(reloaded.sessionStopWinUSD, 240)
+        XCTAssertTrue(reloaded.hardStopLossEnabled)
+        XCTAssertEqual(reloaded.hardStopLossBreakMinutes, 20)
         XCTAssertEqual(reloaded.sessionResultUSD, 40)
         XCTAssertNil(reloaded.sessionLimitReason)
         XCTAssertTrue(FileManager.default.fileExists(atPath: settingsURL.path))
 
         defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testRandomizerRangeBoundariesAreClamped() {
+        let viewModel = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: makeCleanDefaults(),
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL()
+        )
+
+        viewModel.setRandomizerRangeBoundaries(lowUpperBound: 90, midUpperBound: 80)
+        XCTAssertEqual(viewModel.randomizerLowUpperBound, 90)
+        XCTAssertEqual(viewModel.randomizerMidUpperBound, 91)
+
+        viewModel.setRandomizerRangeBoundaries(lowUpperBound: 999, midUpperBound: 999)
+        XCTAssertEqual(viewModel.randomizerLowUpperBound, 97)
+        XCTAssertEqual(viewModel.randomizerMidUpperBound, 98)
+    }
+
+    func testExpiredHardStopLossBreakIsClearedOnReload() {
+        let clock = TestClock(now: Date(timeIntervalSince1970: 1_800_000_000))
+        let defaults = makeCleanDefaults()
+        let settingsURL = makeSettingsFileURL()
+        let journalURL = makeShotJournalFileURL()
+
+        do {
+            let viewModel = RandomizerView(
+                service: MockRandomizerService(),
+                autoStartTimer: false,
+                defaults: defaults,
+                bankrollSettingsFileURL: settingsURL,
+                shotJournalFileURL: journalURL,
+                currentDateProvider: { clock.now }
+            )
+            viewModel.setHardStopLossEnabled(true)
+            viewModel.setHardStopLossBreakMinutes(1)
+            viewModel.setSessionStopLossUSD(10)
+            viewModel.addShotJournalEntry(resultUSD: -10, comment: "", applyToBankroll: false)
+
+            XCTAssertEqual(viewModel.sessionLimitReason, .stopLoss)
+            XCTAssertTrue(viewModel.isHardStopLossBreakActive)
+        }
+
+        clock.advance(by: 61)
+
+        let reloaded = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: defaults,
+            bankrollSettingsFileURL: settingsURL,
+            shotJournalFileURL: journalURL,
+            currentDateProvider: { clock.now }
+        )
+
+        XCTAssertNil(reloaded.sessionLimitReason)
+        XCTAssertEqual(reloaded.sessionResultUSD, 0)
+        XCTAssertFalse(reloaded.isHardStopLossBreakActive)
+        XCTAssertFalse(reloaded.isSessionPlayBlocked)
     }
 
     func testShotAttemptsCannotGoBelowOne() {
@@ -535,5 +650,17 @@ private final class MockNotificationService: NotificationServiceProtocol {
 
     func postNotification(id: String, title: String, body: String) {
         notifications.append(SentNotification(id: id, title: title, body: body))
+    }
+}
+
+private final class TestClock {
+    var now: Date
+
+    init(now: Date) {
+        self.now = now
+    }
+
+    func advance(by seconds: TimeInterval) {
+        now = now.addingTimeInterval(seconds)
     }
 }

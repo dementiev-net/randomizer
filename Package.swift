@@ -21,7 +21,7 @@ let package = Package(
                 "Assets.xcassets",
                 "AppWindowID.swift",
                 "RandomizerApp.swift",
-                "Views/Shared/RatingView.swift",
+                "Views/Shared",
                 "Views/Main",
                 "Views/Journal",
             ],

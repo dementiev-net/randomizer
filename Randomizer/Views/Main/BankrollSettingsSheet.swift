@@ -184,6 +184,75 @@ struct BankrollSettingsSheet: View {
                                 }
                             }
                         }
+
+                        GridRow {
+                            Text("Индикатор, %")
+                                .foregroundColor(.gray)
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(spacing: 6) {
+                                    Button("33/66") {
+                                        viewModel.setRandomizerRangeBoundaries(lowUpperBound: 33, midUpperBound: 66)
+                                    }
+                                    Button("25/75") {
+                                        viewModel.setRandomizerRangeBoundaries(lowUpperBound: 25, midUpperBound: 75)
+                                    }
+                                    Button("20/80") {
+                                        viewModel.setRandomizerRangeBoundaries(lowUpperBound: 20, midUpperBound: 80)
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+
+                                RangeBoundsSlider(
+                                    minimumValue: 1,
+                                    maximumValue: 98,
+                                    lowerValue: viewModel.randomizerLowUpperBound,
+                                    upperValue: viewModel.randomizerMidUpperBound
+                                ) { lower, upper in
+                                    viewModel.setRandomizerRangeBoundaries(
+                                        lowUpperBound: lower,
+                                        midUpperBound: upper
+                                    )
+                                }
+                                .frame(width: 220)
+                            }
+                        }
+
+                        GridRow {
+                            Text("Жесткий stop-loss")
+                                .foregroundColor(.gray)
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Toggle(
+                                    "Включен",
+                                    isOn: Binding(
+                                        get: { viewModel.hardStopLossEnabled },
+                                        set: { viewModel.setHardStopLossEnabled($0) }
+                                    )
+                                )
+                                .toggleStyle(.switch)
+
+                                if viewModel.hardStopLossEnabled {
+                                    Stepper(
+                                        value: Binding(
+                                            get: { viewModel.hardStopLossBreakMinutes },
+                                            set: { viewModel.setHardStopLossBreakMinutes($0) }
+                                        ),
+                                        in: 1...180
+                                    ) {
+                                        Text("Перерыв: \(viewModel.hardStopLossBreakMinutes) мин")
+                                            .monospacedDigit()
+                                    }
+                                    .frame(width: 220, alignment: .leading)
+                                }
+
+                                if viewModel.isHardStopLossBreakActive {
+                                    Text("Осталось: \(viewModel.hardStopLossBreakRemainingText)")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundColor(.orange)
+                                }
+                            }
+                        }
                     }
 
                     Divider()
@@ -202,6 +271,19 @@ struct BankrollSettingsSheet: View {
                             "Лимиты сессии: stop-loss \(formatAmount(viewModel.sessionStopLossUSD))$ / " +
                             "stop-win \(formatAmount(viewModel.sessionStopWinUSD))$"
                         )
+                        Text(
+                            "Индикатор: 0-\(viewModel.randomizerLowUpperBound) / " +
+                            "\(viewModel.randomizerLowUpperBound + 1)-\(viewModel.randomizerMidUpperBound) / " +
+                            "\(viewModel.randomizerMidUpperBound + 1)-99"
+                        )
+                        if viewModel.hardStopLossEnabled {
+                            Text("Жесткий stop-loss: \(viewModel.hardStopLossBreakMinutes) мин")
+                        }
+                        if viewModel.isHardStopLossBreakActive {
+                            Text("Перерыв по stop-loss: \(viewModel.hardStopLossBreakRemainingText)")
+                                .foregroundColor(.orange)
+                                .fontWeight(.semibold)
+                        }
                         Text(
                             viewModel.isShotLocked
                             ? "Шот закрыт после -\(viewModel.shotAttempts) BI. Восстановите банкролл до $\(formatAmount(viewModel.requiredBankrollForShot))."
@@ -565,6 +647,9 @@ struct BankrollSettingsSheet: View {
     private var sessionLimitStatusText: String {
         switch viewModel.sessionLimitReason {
         case .stopLoss:
+            if viewModel.isHardStopLossBreakActive {
+                return "Перерыв по stop-loss: \(viewModel.hardStopLossBreakRemainingText)."
+            }
             return "Сессия остановлена по stop-loss."
         case .stopWin:
             return "Сессия завершена по stop-win."
@@ -576,7 +661,7 @@ struct BankrollSettingsSheet: View {
     private var sessionLimitStatusColor: Color {
         switch viewModel.sessionLimitReason {
         case .stopLoss:
-            return .red
+            return viewModel.isHardStopLossBreakActive ? .orange : .red
         case .stopWin:
             return .green
         case nil:

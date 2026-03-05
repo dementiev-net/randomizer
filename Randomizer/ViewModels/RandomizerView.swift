@@ -59,10 +59,15 @@ class RandomizerView: ObservableObject {
 
     /// Цвет полосок рейтинга (зависит от сгенерированного числа)
     ///
-    /// - 0-33: сероватый
-    /// - 34-66: светло-серо-голубой
-    /// - 67-99: почти белый
+    /// Цвет зависит от текущего сегмента индикатора
+    /// (границы сегментов настраиваются пользователем).
     @Published var barColor: Color = Color(red: 0.45, green: 0.48, blue: 0.53)
+
+    /// Верхняя граница нижнего диапазона индикатора (0...N)
+    @Published private(set) var randomizerLowUpperBound: Int = 33
+
+    /// Верхняя граница среднего диапазона индикатора (N+1...M)
+    @Published private(set) var randomizerMidUpperBound: Int = 66
 
     /// Текущее состояние усталости пользователя
     @Published var fatigueState: SessionFatigueState = .normal
@@ -87,6 +92,15 @@ class RandomizerView: ObservableObject {
 
     /// Лимит убытка текущей сессии в долларах (0 = выключен)
     @Published private(set) var sessionStopLossUSD: Double = 0
+
+    /// Включён ли жёсткий режим stop-loss (автоблокировка на перерыв)
+    @Published private(set) var hardStopLossEnabled: Bool = false
+
+    /// Длительность перерыва после stop-loss (в минутах)
+    @Published private(set) var hardStopLossBreakMinutes: Int = 15
+
+    /// Время окончания перерыва после stop-loss (если активен)
+    @Published private(set) var stopLossBlockUntil: Date?
 
     /// Лимит прибыли текущей сессии в долларах (0 = выключен)
     @Published private(set) var sessionStopWinUSD: Double = 0
@@ -116,6 +130,9 @@ class RandomizerView: ObservableObject {
 
     /// Сервис локальных уведомлений macOS
     private let notificationService: NotificationServiceProtocol
+
+    /// Провайдер текущего времени (для таймеров и тестируемости)
+    private let currentDateProvider: () -> Date
 
     /// Ключ сохранения общего времени использования
     private let allTimeDurationKey = "allTimeDuration"
@@ -151,11 +168,13 @@ class RandomizerView: ObservableObject {
         autoStartTimer: Bool = true,
         defaults: UserDefaults = .standard,
         bankrollSettingsFileURL: URL? = nil,
-        shotJournalFileURL: URL? = nil
+        shotJournalFileURL: URL? = nil,
+        currentDateProvider: @escaping () -> Date = Date.init
     ) {
         self.service = service
         self.notificationService = notificationService
         self.defaults = defaults
+        self.currentDateProvider = currentDateProvider
         self.bankrollSettingsFileURL = bankrollSettingsFileURL ?? Self.defaultBankrollSettingsFileURL()
         self.shotJournalFileURL = shotJournalFileURL ?? Self.defaultShotJournalFileURL()
 
@@ -200,6 +219,7 @@ class RandomizerView: ObservableObject {
 
         // Проверяем усталость каждую секунду
         checkFatigue()
+        handleHardStopLossBreakIfNeeded()
 
         // Автогенерация каждые 10 секунд
         if Int(state.sessionDuration) % Int(randomInterval) == 0 {
@@ -295,6 +315,28 @@ class RandomizerView: ObservableObject {
         sessionLimitReason != nil
     }
 
+    /// Активен ли перерыв по жёсткому stop-loss
+    var isHardStopLossBreakActive: Bool {
+        guard hardStopLossEnabled, let stopLossBlockUntil else { return false }
+        return currentDateProvider() < stopLossBlockUntil
+    }
+
+    /// Оставшееся время перерыва в секундах
+    var hardStopLossBreakRemainingSeconds: Int {
+        guard let stopLossBlockUntil else { return 0 }
+        return max(0, Int(ceil(stopLossBlockUntil.timeIntervalSince(currentDateProvider()))))
+    }
+
+    /// Оставшееся время перерыва в формате HH:MM:SS
+    var hardStopLossBreakRemainingText: String {
+        TimeHelper.format(seconds: TimeInterval(hardStopLossBreakRemainingSeconds))
+    }
+
+    /// Текущий активный сегмент нижнего индикатора (1...3)
+    var currentRandomizerSegment: Int {
+        randomizerSegment(for: state.currentNumber)
+    }
+
     /// Цвет крупного числа на главном экране с учетом лимитов и усталости
     var randomizerNumberColor: Color {
         switch sessionLimitReason {
@@ -311,6 +353,9 @@ class RandomizerView: ObservableObject {
     var sessionStatusText: String? {
         switch sessionLimitReason {
         case .stopLoss:
+            if isHardStopLossBreakActive {
+                return "перерыв \(hardStopLossBreakRemainingText)"
+            }
             return "игра запрещена по stop-loss"
         case .stopWin:
             return "stop-win достигнут, сессию лучше завершить"
@@ -361,6 +406,7 @@ class RandomizerView: ObservableObject {
         state.sessionDuration = 0
         sessionResultUSD = 0
         sessionLimitReason = nil
+        stopLossBlockUntil = nil
         persistBankrollSettings()
     }
 
@@ -410,12 +456,48 @@ class RandomizerView: ObservableObject {
         persistBankrollSettings()
     }
 
+    /// Обновляет границы диапазонов нижнего индикатора
+    ///
+    /// - Parameters:
+    ///   - lowUpperBound: Верхняя граница нижнего диапазона (минимум 1)
+    ///   - midUpperBound: Верхняя граница среднего диапазона (должна быть больше lowUpperBound)
+    func setRandomizerRangeBoundaries(lowUpperBound: Int, midUpperBound: Int) {
+        let low = min(max(1, lowUpperBound), 97)
+        let mid = min(max(low + 1, midUpperBound), 98)
+
+        randomizerLowUpperBound = low
+        randomizerMidUpperBound = mid
+        updateBarColor(for: state.currentNumber)
+        persistBankrollSettings()
+    }
+
     /// Обновляет stop-loss текущей сессии в долларах
     ///
     /// - Parameter value: Лимит убытка (0 = выключен)
     func setSessionStopLossUSD(_ value: Double) {
         sessionStopLossUSD = max(0, value)
         evaluateSessionLimitsIfNeeded()
+        persistBankrollSettings()
+    }
+
+    /// Включает/выключает жёсткий режим stop-loss с перерывом
+    ///
+    /// - Parameter value: `true`, если режим должен быть включён
+    func setHardStopLossEnabled(_ value: Bool) {
+        hardStopLossEnabled = value
+
+        if !value {
+            stopLossBlockUntil = nil
+        }
+
+        persistBankrollSettings()
+    }
+
+    /// Обновляет длительность перерыва по жёсткому stop-loss
+    ///
+    /// - Parameter value: Перерыв в минутах (минимум 1)
+    func setHardStopLossBreakMinutes(_ value: Int) {
+        hardStopLossBreakMinutes = max(1, value)
         persistBankrollSettings()
     }
 
@@ -486,18 +568,31 @@ class RandomizerView: ObservableObject {
     /// - Parameter number: Сгенерированное число (1-99)
     ///
     /// Логика окрашивания:
-    /// - **0-33**: сероватый
-    /// - **34-66**: светло-серо-голубой
-    /// - **67-99**: почти белый
+    /// - **0-lowUpperBound**: сероватый
+    /// - **lowUpperBound+1-midUpperBound**: светло-серо-голубой
+    /// - **midUpperBound+1-99**: почти белый
     private func updateBarColor(for number: Int) {
-        switch number {
-        case ...33:
+        switch randomizerSegment(for: number) {
+        case 1:
             barColor = Color(red: 0.45, green: 0.48, blue: 0.53) // ~#737A87
-        case 34...66:
+        case 2:
             barColor = Color(red: 0.72, green: 0.78, blue: 0.86) // ~#B8C7DB
         default:
             barColor = Color(red: 0.95, green: 0.97, blue: 0.99) // ~#F2F7FC
         }
+    }
+
+    /// Возвращает сегмент нижнего индикатора для заданного числа (1...3)
+    private func randomizerSegment(for number: Int) -> Int {
+        if number <= randomizerLowUpperBound {
+            return 1
+        }
+
+        if number <= randomizerMidUpperBound {
+            return 2
+        }
+
+        return 3
     }
 
     /// Сохраняет общее время использования в `UserDefaults`
@@ -519,13 +614,17 @@ class RandomizerView: ObservableObject {
             }
 
             applyBankrollSettings(settings)
+            normalizeSessionLimitsAfterLoad()
             evaluateAutoUnlockIfNeeded()
             evaluateSessionLimitsIfNeeded()
+            updateBarColor(for: state.currentNumber)
             persistBankrollSettings()
         } catch {
             applyBankrollSettings(.defaults)
+            normalizeSessionLimitsAfterLoad()
             evaluateAutoUnlockIfNeeded()
             evaluateSessionLimitsIfNeeded()
+            updateBarColor(for: state.currentNumber)
             persistBankrollSettings()
         }
     }
@@ -592,11 +691,21 @@ class RandomizerView: ObservableObject {
 
         if sessionStopLossUSD > 0, sessionResultUSD <= -sessionStopLossUSD {
             sessionLimitReason = .stopLoss
-            notificationService.postNotification(
-                id: "session-stoploss-\(UUID().uuidString)",
-                title: "Игра запрещена по stop-loss",
-                body: "Лимит сессии достигнут: \(formatSignedAmount(sessionResultUSD))$."
-            )
+            if hardStopLossEnabled {
+                let breakSeconds = TimeInterval(hardStopLossBreakMinutes * 60)
+                stopLossBlockUntil = currentDateProvider().addingTimeInterval(breakSeconds)
+                notificationService.postNotification(
+                    id: "session-stoploss-\(UUID().uuidString)",
+                    title: "Игра запрещена по stop-loss",
+                    body: "Лимит сессии достигнут: \(formatSignedAmount(sessionResultUSD))$. Перерыв \(hardStopLossBreakMinutes) мин."
+                )
+            } else {
+                notificationService.postNotification(
+                    id: "session-stoploss-\(UUID().uuidString)",
+                    title: "Игра запрещена по stop-loss",
+                    body: "Лимит сессии достигнут: \(formatSignedAmount(sessionResultUSD))$."
+                )
+            }
             return
         }
 
@@ -608,6 +717,28 @@ class RandomizerView: ObservableObject {
                 body: "Зафиксирован результат сессии: \(formatSignedAmount(sessionResultUSD))$."
             )
         }
+    }
+
+    /// Проверяет окончание перерыва по жёсткому stop-loss и разблокирует сессию
+    private func handleHardStopLossBreakIfNeeded() {
+        guard let stopLossBlockUntil else { return }
+        guard currentDateProvider() >= stopLossBlockUntil else { return }
+
+        self.stopLossBlockUntil = nil
+
+        guard sessionLimitReason == .stopLoss else {
+            persistBankrollSettings()
+            return
+        }
+
+        sessionLimitReason = nil
+        sessionResultUSD = 0
+        notificationService.postNotification(
+            id: "session-stoploss-break-end-\(UUID().uuidString)",
+            title: "Перерыв завершён",
+            body: "Можно продолжать игру."
+        )
+        persistBankrollSettings()
     }
 
     /// Запрашивает разрешение на локальные уведомления macOS
@@ -654,6 +785,27 @@ class RandomizerView: ObservableObject {
         return "\(sign)\(String(format: "%.2f", rounded))"
     }
 
+    /// Нормализует состояние лимитов сессии после загрузки из JSON
+    private func normalizeSessionLimitsAfterLoad() {
+        guard hardStopLossEnabled else {
+            stopLossBlockUntil = nil
+            return
+        }
+
+        guard sessionLimitReason == .stopLoss else {
+            stopLossBlockUntil = nil
+            return
+        }
+
+        guard let stopLossBlockUntil else { return }
+
+        if currentDateProvider() >= stopLossBlockUntil {
+            self.stopLossBlockUntil = nil
+            sessionLimitReason = nil
+            sessionResultUSD = 0
+        }
+    }
+
     /// Автоматически снимает блокировку шота после восстановления до порога в BI
     private func evaluateAutoUnlockIfNeeded() {
         guard isShotLocked else { return }
@@ -670,9 +822,16 @@ class RandomizerView: ObservableObject {
         shotLimitNL = max(1, settings.shotLimitNL)
         shotBankrollThresholdBuyIns = max(1, settings.shotBankrollThresholdBuyIns)
         shotAttempts = max(1, settings.shotAttempts)
+        let low = min(max(1, settings.randomizerLowUpperBound), 97)
+        let mid = min(max(low + 1, settings.randomizerMidUpperBound), 98)
+        randomizerLowUpperBound = low
+        randomizerMidUpperBound = mid
         currentShotResultUSD = settings.currentShotResultUSD
         isShotLocked = settings.isShotLocked
         sessionStopLossUSD = max(0, settings.sessionStopLossUSD)
+        hardStopLossEnabled = settings.hardStopLossEnabled
+        hardStopLossBreakMinutes = max(1, settings.hardStopLossBreakMinutes)
+        stopLossBlockUntil = settings.stopLossBlockUntil
         sessionStopWinUSD = max(0, settings.sessionStopWinUSD)
         sessionResultUSD = settings.sessionResultUSD
         sessionLimitReason = settings.sessionLimitReason.flatMap { SessionLimitReason(rawValue: $0) }
@@ -685,9 +844,14 @@ class RandomizerView: ObservableObject {
             shotLimitNL: shotLimitNL,
             shotBankrollThresholdBuyIns: shotBankrollThresholdBuyIns,
             shotAttempts: shotAttempts,
+            randomizerLowUpperBound: randomizerLowUpperBound,
+            randomizerMidUpperBound: randomizerMidUpperBound,
             currentShotResultUSD: currentShotResultUSD,
             isShotLocked: isShotLocked,
             sessionStopLossUSD: sessionStopLossUSD,
+            hardStopLossEnabled: hardStopLossEnabled,
+            hardStopLossBreakMinutes: hardStopLossBreakMinutes,
+            stopLossBlockUntil: stopLossBlockUntil,
             sessionStopWinUSD: sessionStopWinUSD,
             sessionResultUSD: sessionResultUSD,
             sessionLimitReason: sessionLimitReason?.rawValue
