@@ -71,6 +71,9 @@ class RandomizerView: ObservableObject {
     /// Текущее состояние усталости пользователя
     @Published var fatigueState: SessionFatigueState = .normal
 
+    /// Временно скрывать ли статус "отдохни" после сброса сессии
+    @Published private(set) var isRestStatusDismissed: Bool = false
+
     /// Порог warning для усталости в минутах (внутреннее хранение)
     @Published private(set) var fatigueWarningMinutes: Int = 60
 
@@ -283,6 +286,7 @@ class RandomizerView: ObservableObject {
 
         guard nextState != previousState else { return }
         fatigueState = nextState
+        isRestStatusDismissed = false
         notifyFatigueTransition(from: previousState, to: nextState)
     }
 
@@ -371,6 +375,11 @@ class RandomizerView: ObservableObject {
         randomizerSegment(for: state.currentNumber)
     }
 
+    /// Показывать ли fatigue-подсветку (`отдохни` + жёлтый цвет числа)
+    var isFatigueHighlightVisible: Bool {
+        fatigueState != .normal && !isRestStatusDismissed
+    }
+
     /// Цвет крупного числа на главном экране с учетом лимитов и усталости
     var randomizerNumberColor: Color {
         switch sessionLimitReason {
@@ -379,7 +388,7 @@ class RandomizerView: ObservableObject {
         case .stopWin:
             return .green
         case nil:
-            return fatigueState == .normal ? .white : .yellow
+            return isFatigueHighlightVisible ? .yellow : .white
         }
     }
 
@@ -394,7 +403,7 @@ class RandomizerView: ObservableObject {
         case .stopWin:
             return "stop-win достигнут"
         case nil:
-            return fatigueState == .normal ? nil : "отдохни"
+            return isFatigueHighlightVisible ? "отдохни" : nil
         }
     }
 
@@ -406,7 +415,7 @@ class RandomizerView: ObservableObject {
         case .stopWin:
             return .green
         case nil:
-            return fatigueState == .normal ? .gray : .yellow
+            return isFatigueHighlightVisible ? .yellow : .gray
         }
     }
 
@@ -441,6 +450,7 @@ class RandomizerView: ObservableObject {
         sessionResultUSD = 0
         sessionLimitReason = nil
         stopLossBlockUntil = nil
+        isRestStatusDismissed = true
         persistBankrollSettings()
     }
 

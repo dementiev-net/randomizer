@@ -65,6 +65,27 @@ final class RandomizerViewTests: XCTestCase {
         XCTAssertEqual(viewModel.state.allTimeDuration, 5)
     }
 
+    func testResetSessionClearsOnlyRestStatusText() {
+        let viewModel = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: makeCleanDefaults(),
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL()
+        )
+
+        viewModel.state.allTimeDuration = 3_599
+        viewModel.tick()
+        XCTAssertEqual(viewModel.fatigueState, .warning)
+        XCTAssertEqual(viewModel.sessionStatusText, "отдохни")
+        XCTAssertTrue(viewModel.isFatigueHighlightVisible)
+
+        viewModel.resetSession()
+        XCTAssertEqual(viewModel.sessionStatusText, nil)
+        XCTAssertEqual(viewModel.fatigueState, .warning)
+        XCTAssertFalse(viewModel.isFatigueHighlightVisible)
+    }
+
     func testAllTimeDurationPersistsBetweenViewModelInstancesWithinSameDay() {
         let suite = "RandomizerTests.Persistence.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else {
