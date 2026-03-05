@@ -71,11 +71,11 @@ class RandomizerView: ObservableObject {
     /// Текущее состояние усталости пользователя
     @Published var fatigueState: SessionFatigueState = .normal
 
-    /// Порог warning для усталости в минутах
-    @Published private(set) var fatigueWarningMinutes: Int = 55
+    /// Порог warning для усталости в минутах (внутреннее хранение)
+    @Published private(set) var fatigueWarningMinutes: Int = 60
 
-    /// Порог critical для усталости в минутах
-    @Published private(set) var fatigueCriticalMinutes: Int = 60
+    /// Порог critical для усталости в минутах (внутреннее хранение)
+    @Published private(set) var fatigueCriticalMinutes: Int = 120
 
     /// Текущий банкролл в долларах
     @Published private(set) var currentBankrollUSD: Double = 0
@@ -121,20 +121,23 @@ class RandomizerView: ObservableObject {
 
     // MARK: - Private Properties
 
-    /// Минимально допустимый порог warning (в минутах)
-    private let minFatigueWarningMinutes = 1
+    /// Минимально допустимый порог warning (в часах)
+    private let minFatigueWarningHours = 1
 
-    /// Максимально допустимый порог warning (в минутах)
-    private let maxFatigueWarningMinutes = 1439
+    /// Максимально допустимый порог warning (в часах)
+    private let maxFatigueWarningHours = 23
 
-    /// Минимально допустимый порог critical (в минутах)
-    private let minFatigueCriticalMinutes = 2
+    /// Минимально допустимый порог critical (в часах)
+    private let minFatigueCriticalHours = 2
 
-    /// Максимально допустимый порог critical (в минутах)
-    private let maxFatigueCriticalMinutes = 1440
+    /// Максимально допустимый порог critical (в часах)
+    private let maxFatigueCriticalHours = 24
 
     /// Сервис генерации случайных чисел и расчёта рейтинга
     private let service: RandomizerServiceProtocol
+
+    /// Персистентное хранилище счётчика общего времени
+    private let defaults: UserDefaults
 
     /// Сервис локальных уведомлений macOS
     private let notificationService: NotificationServiceProtocol
@@ -154,6 +157,12 @@ class RandomizerView: ObservableObject {
     /// Интервал автоматической генерации нового числа (секунды)
     private let randomInterval: TimeInterval = 10.0
 
+    /// Ключ сохранения общего времени использования
+    private let allTimeDurationKey = "allTimeDuration"
+
+    /// Ключ сохранения календарного дня для общего времени
+    private let allTimeDayKey = "allTimeDay"
+
     // MARK: - Initialization
 
     /// Инициализирует ViewModel с опциональным сервисом
@@ -162,7 +171,7 @@ class RandomizerView: ObservableObject {
     ///   - service: Сервис генерации чисел (по умолчанию `RandomizerService`)
     ///   - notificationService: Сервис локальных уведомлений
     ///   - autoStartTimer: Запускать ли внутренний таймер сразу после инициализации
-    ///   - defaults: Не используется (оставлен для обратной совместимости инициализации)
+    ///   - defaults: Хранилище для персистентного общего времени по текущему дню
     ///   - bankrollSettingsFileURL: URL JSON-файла настроек банкролла
     ///   - shotJournalFileURL: URL JSON-файла журнала шотов
     ///
@@ -171,18 +180,19 @@ class RandomizerView: ObservableObject {
         service: RandomizerServiceProtocol = RandomizerService(),
         notificationService: NotificationServiceProtocol = NoopNotificationService(),
         autoStartTimer: Bool = true,
-        defaults _: UserDefaults = .standard,
+        defaults: UserDefaults = .standard,
         bankrollSettingsFileURL: URL? = nil,
         shotJournalFileURL: URL? = nil,
         currentDateProvider: @escaping () -> Date = Date.init
     ) {
         self.service = service
         self.notificationService = notificationService
+        self.defaults = defaults
         self.currentDateProvider = currentDateProvider
         self.bankrollSettingsFileURL = bankrollSettingsFileURL ?? Self.defaultBankrollSettingsFileURL()
         self.shotJournalFileURL = shotJournalFileURL ?? Self.defaultShotJournalFileURL()
 
-        state.allTimeDuration = 0
+        restoreAllTimeDurationForCurrentDay()
         loadBankrollSettings()
         loadShotJournal()
         checkFatigue()
@@ -217,7 +227,9 @@ class RandomizerView: ObservableObject {
     /// генерирует новое число при достижении интервала автогенерации.
     func tick() {
         state.sessionDuration += 1
+        resetAllTimeIfDayChanged()
         state.allTimeDuration += 1
+        persistAllTimeDuration()
 
         // Проверяем усталость каждую секунду
         checkFatigue()
@@ -231,12 +243,22 @@ class RandomizerView: ObservableObject {
 
     /// Порог warning в секундах
     private var warningThreshold: TimeInterval {
-        TimeInterval(fatigueWarningMinutes * 60)
+        TimeInterval(fatigueWarningHours * 3600)
     }
 
     /// Порог critical в секундах
     private var criticalThreshold: TimeInterval {
-        TimeInterval(fatigueCriticalMinutes * 60)
+        TimeInterval(fatigueCriticalHours * 3600)
+    }
+
+    /// Порог warning для усталости в часах (для UI)
+    var fatigueWarningHours: Int {
+        max(minFatigueWarningHours, fatigueWarningMinutes / 60)
+    }
+
+    /// Порог critical для усталости в часах (для UI)
+    var fatigueCriticalHours: Int {
+        max(minFatigueCriticalHours, fatigueCriticalMinutes / 60)
     }
 
     // MARK: - Fatigue Monitoring
@@ -427,6 +449,7 @@ class RandomizerView: ObservableObject {
     /// Обнуляет `allTimeDuration` и пересчитывает усталость.
     func resetAllTime() {
         state.allTimeDuration = 0
+        persistAllTimeDuration()
         checkFatigue()
     }
 
@@ -467,32 +490,49 @@ class RandomizerView: ObservableObject {
         persistBankrollSettings()
     }
 
-    /// Обновляет порог warning для усталости в минутах
+    /// Обновляет порог warning для усталости в часах
     ///
-    /// - Parameter value: Новый порог warning
-    func setFatigueWarningMinutes(_ value: Int) {
-        let warning = min(max(minFatigueWarningMinutes, value), maxFatigueWarningMinutes)
-        fatigueWarningMinutes = warning
+    /// - Parameter value: Новый порог warning в часах
+    func setFatigueWarningHours(_ value: Int) {
+        let warning = min(max(minFatigueWarningHours, value), maxFatigueWarningHours)
+        fatigueWarningMinutes = warning * 60
 
-        if fatigueCriticalMinutes <= warning {
-            fatigueCriticalMinutes = min(maxFatigueCriticalMinutes, warning + 1)
+        if fatigueCriticalHours <= warning {
+            let nextCritical = min(maxFatigueCriticalHours, warning + 1)
+            fatigueCriticalMinutes = nextCritical * 60
         }
 
         checkFatigue()
         persistBankrollSettings()
     }
 
-    /// Обновляет порог critical для усталости в минутах
+    /// Обновляет порог critical для усталости в часах
     ///
-    /// - Parameter value: Новый порог critical
-    func setFatigueCriticalMinutes(_ value: Int) {
+    /// - Parameter value: Новый порог critical в часах
+    func setFatigueCriticalHours(_ value: Int) {
         let critical = min(
-            max(fatigueWarningMinutes + 1, value),
-            maxFatigueCriticalMinutes
+            max(fatigueWarningHours + 1, value),
+            maxFatigueCriticalHours
         )
-        fatigueCriticalMinutes = max(minFatigueCriticalMinutes, critical)
+        fatigueCriticalMinutes = max(minFatigueCriticalHours, critical) * 60
         checkFatigue()
         persistBankrollSettings()
+    }
+
+    /// Обновляет порог warning для усталости в минутах (для обратной совместимости)
+    ///
+    /// Значение округляется вверх до ближайшего часа.
+    /// - Parameter value: Новый порог warning в минутах
+    func setFatigueWarningMinutes(_ value: Int) {
+        setFatigueWarningHours(Self.hoursFromMinutesRoundedUp(value))
+    }
+
+    /// Обновляет порог critical для усталости в минутах (для обратной совместимости)
+    ///
+    /// Значение округляется вверх до ближайшего часа.
+    /// - Parameter value: Новый порог critical в минутах
+    func setFatigueCriticalMinutes(_ value: Int) {
+        setFatigueCriticalHours(Self.hoursFromMinutesRoundedUp(value))
     }
 
     /// Обновляет границы диапазонов нижнего индикатора
@@ -640,6 +680,41 @@ class RandomizerView: ObservableObject {
         }
 
         return 3
+    }
+
+    /// Восстанавливает общее время для текущего календарного дня
+    ///
+    /// Если сохранённый день не совпадает с сегодняшним, счётчик сбрасывается в 0.
+    private func restoreAllTimeDurationForCurrentDay() {
+        let todayKey = Self.dayKey(for: currentDateProvider())
+        let storedDayKey = defaults.string(forKey: allTimeDayKey)
+
+        if storedDayKey == todayKey {
+            state.allTimeDuration = defaults.double(forKey: allTimeDurationKey)
+            return
+        }
+
+        state.allTimeDuration = 0
+        defaults.set(todayKey, forKey: allTimeDayKey)
+        defaults.set(0, forKey: allTimeDurationKey)
+    }
+
+    /// Сбрасывает счётчик общего времени, если наступил новый календарный день
+    private func resetAllTimeIfDayChanged() {
+        let todayKey = Self.dayKey(for: currentDateProvider())
+        let storedDayKey = defaults.string(forKey: allTimeDayKey)
+        guard storedDayKey == todayKey else {
+            state.allTimeDuration = 0
+            defaults.set(todayKey, forKey: allTimeDayKey)
+            defaults.set(0, forKey: allTimeDurationKey)
+            return
+        }
+    }
+
+    /// Сохраняет общее время использования для текущего календарного дня
+    private func persistAllTimeDuration() {
+        defaults.set(state.allTimeDuration, forKey: allTimeDurationKey)
+        defaults.set(Self.dayKey(for: currentDateProvider()), forKey: allTimeDayKey)
     }
 
     /// Загружает параметры банкролла и шота из JSON-файла в Documents
@@ -864,13 +939,19 @@ class RandomizerView: ObservableObject {
         shotLimitNL = max(1, settings.shotLimitNL)
         shotBankrollThresholdBuyIns = max(1, settings.shotBankrollThresholdBuyIns)
         shotAttempts = max(1, settings.shotAttempts)
-        let warning = min(max(minFatigueWarningMinutes, settings.fatigueWarningMinutes), maxFatigueWarningMinutes)
-        let critical = min(
-            max(warning + 1, settings.fatigueCriticalMinutes),
-            maxFatigueCriticalMinutes
+        let warningHours = min(
+            max(minFatigueWarningHours, Self.hoursFromMinutesRoundedUp(settings.fatigueWarningMinutes)),
+            maxFatigueWarningHours
         )
-        fatigueWarningMinutes = warning
-        fatigueCriticalMinutes = max(minFatigueCriticalMinutes, critical)
+        let criticalHours = min(
+            max(
+                warningHours + 1,
+                Self.hoursFromMinutesRoundedUp(settings.fatigueCriticalMinutes)
+            ),
+            maxFatigueCriticalHours
+        )
+        fatigueWarningMinutes = warningHours * 60
+        fatigueCriticalMinutes = criticalHours * 60
         let low = min(max(1, settings.randomizerLowUpperBound), 97)
         let mid = min(max(low + 1, settings.randomizerMidUpperBound), 98)
         randomizerLowUpperBound = low
@@ -907,6 +988,17 @@ class RandomizerView: ObservableObject {
             sessionResultUSD: sessionResultUSD,
             sessionLimitReason: sessionLimitReason?.rawValue
         )
+    }
+
+    /// Переводит минуты в часы с округлением вверх (минимум 1 час)
+    private static func hoursFromMinutesRoundedUp(_ minutes: Int) -> Int {
+        max(1, (max(1, minutes) + 59) / 60)
+    }
+
+    /// Возвращает ключ календарного дня в текущем часовом поясе
+    private static func dayKey(for date: Date) -> String {
+        let startOfDay = Calendar.current.startOfDay(for: date)
+        return String(Int(startOfDay.timeIntervalSince1970))
     }
 
     /// Создаёт каталог Documents/Randomizer при необходимости

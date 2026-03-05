@@ -65,12 +65,13 @@ final class RandomizerViewTests: XCTestCase {
         XCTAssertEqual(viewModel.state.allTimeDuration, 5)
     }
 
-    func testAllTimeDurationResetsBetweenViewModelInstances() {
+    func testAllTimeDurationPersistsBetweenViewModelInstancesWithinSameDay() {
         let suite = "RandomizerTests.Persistence.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else {
             return XCTFail("Unable to create suite defaults")
         }
         defaults.removePersistentDomain(forName: suite)
+        let clock = TestClock(now: Date(timeIntervalSince1970: 1_700_000_000))
 
         do {
             let viewModel = RandomizerView(
@@ -78,7 +79,8 @@ final class RandomizerViewTests: XCTestCase {
                 autoStartTimer: false,
                 defaults: defaults,
                 bankrollSettingsFileURL: makeSettingsFileURL(),
-                shotJournalFileURL: makeShotJournalFileURL()
+                shotJournalFileURL: makeShotJournalFileURL(),
+                currentDateProvider: { clock.now }
             )
             for _ in 0..<3 {
                 viewModel.tick()
@@ -91,11 +93,71 @@ final class RandomizerViewTests: XCTestCase {
             autoStartTimer: false,
             defaults: defaults,
             bankrollSettingsFileURL: makeSettingsFileURL(),
-            shotJournalFileURL: makeShotJournalFileURL()
+            shotJournalFileURL: makeShotJournalFileURL(),
+            currentDateProvider: { clock.now }
+        )
+        XCTAssertEqual(reloaded.state.allTimeDuration, 3)
+
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testAllTimeDurationResetsBetweenViewModelInstancesOnNextDay() {
+        let suite = "RandomizerTests.PersistenceByDay.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            return XCTFail("Unable to create suite defaults")
+        }
+        defaults.removePersistentDomain(forName: suite)
+        let clock = TestClock(now: Date(timeIntervalSince1970: 1_700_000_000))
+
+        do {
+            let viewModel = RandomizerView(
+                service: MockRandomizerService(),
+                autoStartTimer: false,
+                defaults: defaults,
+                bankrollSettingsFileURL: makeSettingsFileURL(),
+                shotJournalFileURL: makeShotJournalFileURL(),
+                currentDateProvider: { clock.now }
+            )
+            for _ in 0..<3 {
+                viewModel.tick()
+            }
+            XCTAssertEqual(viewModel.state.allTimeDuration, 3)
+        }
+
+        clock.advance(by: 86_400)
+
+        let reloaded = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: defaults,
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL(),
+            currentDateProvider: { clock.now }
         )
         XCTAssertEqual(reloaded.state.allTimeDuration, 0)
 
         defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testAllTimeDurationResetsAtDayBoundaryDuringTick() {
+        let clock = TestClock(now: Date(timeIntervalSince1970: 1_700_000_000))
+        let defaults = makeCleanDefaults()
+        let viewModel = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: defaults,
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL(),
+            currentDateProvider: { clock.now }
+        )
+
+        viewModel.tick()
+        viewModel.tick()
+        XCTAssertEqual(viewModel.state.allTimeDuration, 2)
+
+        clock.advance(by: 86_400)
+        viewModel.tick()
+        XCTAssertEqual(viewModel.state.allTimeDuration, 1)
     }
 
     func testFatigueTransitionSendsRestNotificationOnce() {
@@ -117,7 +179,7 @@ final class RandomizerViewTests: XCTestCase {
             0
         )
 
-        viewModel.state.allTimeDuration = 3299
+        viewModel.state.allTimeDuration = 3_599
         viewModel.tick()
         XCTAssertEqual(viewModel.fatigueState, .warning)
         XCTAssertEqual(
@@ -326,8 +388,8 @@ final class RandomizerViewTests: XCTestCase {
         XCTAssertEqual(reloaded.shotLimitNL, 25)
         XCTAssertEqual(reloaded.shotBankrollThresholdBuyIns, 30)
         XCTAssertEqual(reloaded.shotAttempts, 3)
-        XCTAssertEqual(reloaded.fatigueWarningMinutes, 45)
-        XCTAssertEqual(reloaded.fatigueCriticalMinutes, 70)
+        XCTAssertEqual(reloaded.fatigueWarningMinutes, 60)
+        XCTAssertEqual(reloaded.fatigueCriticalMinutes, 120)
         XCTAssertEqual(reloaded.randomizerLowUpperBound, 25)
         XCTAssertEqual(reloaded.randomizerMidUpperBound, 75)
         XCTAssertEqual(reloaded.sessionStopLossUSD, 120)
@@ -370,13 +432,13 @@ final class RandomizerViewTests: XCTestCase {
 
         viewModel.setFatigueWarningMinutes(60)
         XCTAssertEqual(viewModel.fatigueWarningMinutes, 60)
-        XCTAssertEqual(viewModel.fatigueCriticalMinutes, 61)
+        XCTAssertEqual(viewModel.fatigueCriticalMinutes, 120)
 
         viewModel.setFatigueCriticalMinutes(30)
-        XCTAssertEqual(viewModel.fatigueCriticalMinutes, 61)
+        XCTAssertEqual(viewModel.fatigueCriticalMinutes, 120)
 
         viewModel.setFatigueWarningMinutes(9_999)
-        XCTAssertEqual(viewModel.fatigueWarningMinutes, 1439)
+        XCTAssertEqual(viewModel.fatigueWarningMinutes, 1380)
         XCTAssertEqual(viewModel.fatigueCriticalMinutes, 1440)
 
         viewModel.setFatigueCriticalMinutes(9_999)

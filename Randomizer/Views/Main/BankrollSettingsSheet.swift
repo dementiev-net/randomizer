@@ -186,7 +186,7 @@ struct BankrollSettingsSheet: View {
                         }
 
                         GridRow {
-                            Text("Усталость, мин")
+                            Text("Усталость, ч")
                                 .foregroundColor(.gray)
 
                             HStack(spacing: 12) {
@@ -197,12 +197,12 @@ struct BankrollSettingsSheet: View {
 
                                     Stepper(
                                         value: Binding(
-                                            get: { viewModel.fatigueWarningMinutes },
-                                            set: { viewModel.setFatigueWarningMinutes($0) }
+                                            get: { viewModel.fatigueWarningHours },
+                                            set: { viewModel.setFatigueWarningHours($0) }
                                         ),
-                                        in: 1...1439
+                                        in: 1...23
                                     ) {
-                                        Text("\(viewModel.fatigueWarningMinutes)")
+                                        Text("\(viewModel.fatigueWarningHours)")
                                             .monospacedDigit()
                                             .frame(minWidth: 40, alignment: .leading)
                                     }
@@ -216,12 +216,12 @@ struct BankrollSettingsSheet: View {
 
                                     Stepper(
                                         value: Binding(
-                                            get: { viewModel.fatigueCriticalMinutes },
-                                            set: { viewModel.setFatigueCriticalMinutes($0) }
+                                            get: { viewModel.fatigueCriticalHours },
+                                            set: { viewModel.setFatigueCriticalHours($0) }
                                         ),
-                                        in: 2...1440
+                                        in: 2...24
                                     ) {
-                                        Text("\(viewModel.fatigueCriticalMinutes)")
+                                        Text("\(viewModel.fatigueCriticalHours)")
                                             .monospacedDigit()
                                             .frame(minWidth: 40, alignment: .leading)
                                     }
@@ -317,8 +317,8 @@ struct BankrollSettingsSheet: View {
                             "stop-win \(formatAmount(viewModel.sessionStopWinUSD))$"
                         )
                         Text(
-                            "Усталость: warning \(viewModel.fatigueWarningMinutes) мин / " +
-                            "critical \(viewModel.fatigueCriticalMinutes) мин"
+                            "Усталость: warning \(viewModel.fatigueWarningHours) ч / " +
+                            "critical \(viewModel.fatigueCriticalHours) ч"
                         )
                         Text(
                             "Индикатор: 0-\(viewModel.randomizerLowUpperBound) / " +
