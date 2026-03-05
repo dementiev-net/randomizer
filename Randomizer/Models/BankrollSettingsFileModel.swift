@@ -13,6 +13,8 @@ struct BankrollSettingsFileModel: Codable {
     let shotLimitNL: Int
     let shotBankrollThresholdBuyIns: Int
     let shotAttempts: Int
+    let fatigueWarningMinutes: Int
+    let fatigueCriticalMinutes: Int
     let randomizerLowUpperBound: Int
     let randomizerMidUpperBound: Int
     let currentShotResultUSD: Double
@@ -30,6 +32,8 @@ struct BankrollSettingsFileModel: Codable {
         case shotLimitNL
         case shotBankrollThresholdBuyIns
         case shotAttempts
+        case fatigueWarningMinutes
+        case fatigueCriticalMinutes
         case randomizerLowUpperBound
         case randomizerMidUpperBound
         case currentShotResultUSD
@@ -48,6 +52,8 @@ struct BankrollSettingsFileModel: Codable {
         shotLimitNL: Int,
         shotBankrollThresholdBuyIns: Int,
         shotAttempts: Int,
+        fatigueWarningMinutes: Int,
+        fatigueCriticalMinutes: Int,
         randomizerLowUpperBound: Int,
         randomizerMidUpperBound: Int,
         currentShotResultUSD: Double,
@@ -64,6 +70,8 @@ struct BankrollSettingsFileModel: Codable {
         self.shotLimitNL = shotLimitNL
         self.shotBankrollThresholdBuyIns = shotBankrollThresholdBuyIns
         self.shotAttempts = shotAttempts
+        self.fatigueWarningMinutes = fatigueWarningMinutes
+        self.fatigueCriticalMinutes = fatigueCriticalMinutes
         self.randomizerLowUpperBound = randomizerLowUpperBound
         self.randomizerMidUpperBound = randomizerMidUpperBound
         self.currentShotResultUSD = currentShotResultUSD
@@ -83,6 +91,8 @@ struct BankrollSettingsFileModel: Codable {
         shotLimitNL = try container.decodeIfPresent(Int.self, forKey: .shotLimitNL) ?? 25
         shotBankrollThresholdBuyIns = try container.decodeIfPresent(Int.self, forKey: .shotBankrollThresholdBuyIns) ?? 25
         shotAttempts = try container.decodeIfPresent(Int.self, forKey: .shotAttempts) ?? 2
+        fatigueWarningMinutes = try container.decodeIfPresent(Int.self, forKey: .fatigueWarningMinutes) ?? 55
+        fatigueCriticalMinutes = try container.decodeIfPresent(Int.self, forKey: .fatigueCriticalMinutes) ?? 60
         randomizerLowUpperBound = try container.decodeIfPresent(Int.self, forKey: .randomizerLowUpperBound) ?? 33
         randomizerMidUpperBound = try container.decodeIfPresent(Int.self, forKey: .randomizerMidUpperBound) ?? 66
         currentShotResultUSD = try container.decodeIfPresent(Double.self, forKey: .currentShotResultUSD) ?? 0
@@ -101,6 +111,8 @@ struct BankrollSettingsFileModel: Codable {
         shotLimitNL: 25,
         shotBankrollThresholdBuyIns: 25,
         shotAttempts: 2,
+        fatigueWarningMinutes: 55,
+        fatigueCriticalMinutes: 60,
         randomizerLowUpperBound: 33,
         randomizerMidUpperBound: 66,
         currentShotResultUSD: 0,

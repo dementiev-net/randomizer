@@ -65,7 +65,7 @@ final class RandomizerViewTests: XCTestCase {
         XCTAssertEqual(viewModel.state.allTimeDuration, 5)
     }
 
-    func testAllTimeDurationPersistsBetweenViewModelInstances() {
+    func testAllTimeDurationResetsBetweenViewModelInstances() {
         let suite = "RandomizerTests.Persistence.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else {
             return XCTFail("Unable to create suite defaults")
@@ -93,30 +93,31 @@ final class RandomizerViewTests: XCTestCase {
             bankrollSettingsFileURL: makeSettingsFileURL(),
             shotJournalFileURL: makeShotJournalFileURL()
         )
-        XCTAssertEqual(reloaded.state.allTimeDuration, 3)
+        XCTAssertEqual(reloaded.state.allTimeDuration, 0)
 
         defaults.removePersistentDomain(forName: suite)
     }
 
     func testFatigueTransitionSendsRestNotificationOnce() {
-        let defaults = makeCleanDefaults()
-        defaults.set(3299, forKey: "allTimeDuration")
         let notifications = MockNotificationService()
         let viewModel = RandomizerView(
             service: MockRandomizerService(),
             notificationService: notifications,
             autoStartTimer: false,
-            defaults: defaults,
+            defaults: makeCleanDefaults(),
             bankrollSettingsFileURL: makeSettingsFileURL(),
             shotJournalFileURL: makeShotJournalFileURL()
         )
 
+        XCTAssertEqual(notifications.authorizationRequestsCount, 0)
+        viewModel.requestNotificationAuthorization()
         XCTAssertEqual(notifications.authorizationRequestsCount, 1)
         XCTAssertEqual(
             notifications.notifications.filter { $0.title == "Пора отдохнуть" }.count,
             0
         )
 
+        viewModel.state.allTimeDuration = 3299
         viewModel.tick()
         XCTAssertEqual(viewModel.fatigueState, .warning)
         XCTAssertEqual(
@@ -304,6 +305,8 @@ final class RandomizerViewTests: XCTestCase {
             viewModel.setShotLimitNL(25)
             viewModel.setShotBankrollThresholdBuyIns(30)
             viewModel.setShotAttempts(3)
+            viewModel.setFatigueWarningMinutes(45)
+            viewModel.setFatigueCriticalMinutes(70)
             viewModel.setRandomizerRangeBoundaries(lowUpperBound: 25, midUpperBound: 75)
             viewModel.setSessionStopLossUSD(120)
             viewModel.setSessionStopWinUSD(240)
@@ -323,6 +326,8 @@ final class RandomizerViewTests: XCTestCase {
         XCTAssertEqual(reloaded.shotLimitNL, 25)
         XCTAssertEqual(reloaded.shotBankrollThresholdBuyIns, 30)
         XCTAssertEqual(reloaded.shotAttempts, 3)
+        XCTAssertEqual(reloaded.fatigueWarningMinutes, 45)
+        XCTAssertEqual(reloaded.fatigueCriticalMinutes, 70)
         XCTAssertEqual(reloaded.randomizerLowUpperBound, 25)
         XCTAssertEqual(reloaded.randomizerMidUpperBound, 75)
         XCTAssertEqual(reloaded.sessionStopLossUSD, 120)
@@ -352,6 +357,30 @@ final class RandomizerViewTests: XCTestCase {
         viewModel.setRandomizerRangeBoundaries(lowUpperBound: 999, midUpperBound: 999)
         XCTAssertEqual(viewModel.randomizerLowUpperBound, 97)
         XCTAssertEqual(viewModel.randomizerMidUpperBound, 98)
+    }
+
+    func testFatigueThresholdsAreClampedAndOrdered() {
+        let viewModel = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: makeCleanDefaults(),
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL()
+        )
+
+        viewModel.setFatigueWarningMinutes(60)
+        XCTAssertEqual(viewModel.fatigueWarningMinutes, 60)
+        XCTAssertEqual(viewModel.fatigueCriticalMinutes, 61)
+
+        viewModel.setFatigueCriticalMinutes(30)
+        XCTAssertEqual(viewModel.fatigueCriticalMinutes, 61)
+
+        viewModel.setFatigueWarningMinutes(9_999)
+        XCTAssertEqual(viewModel.fatigueWarningMinutes, 1439)
+        XCTAssertEqual(viewModel.fatigueCriticalMinutes, 1440)
+
+        viewModel.setFatigueCriticalMinutes(9_999)
+        XCTAssertEqual(viewModel.fatigueCriticalMinutes, 1440)
     }
 
     func testExpiredHardStopLossBreakIsClearedOnReload() {

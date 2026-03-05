@@ -14,16 +14,16 @@ import Combine
 ///
 /// Используется для визуальной индикации длительности работы с приложением:
 /// - **normal**: стандартное состояние (серый цвет)
-/// - **warning**: предупреждение о длительной работе (оранжевый цвет, 55+ минут)
-/// - **critical**: критическая усталость (красный пульсирующий, 60+ минут)
+/// - **warning**: предупреждение о длительной работе (оранжевый цвет)
+/// - **critical**: критическая усталость (красный пульсирующий)
 enum SessionFatigueState: Equatable {
-    /// Нормальное состояние (менее 55 минут)
+    /// Нормальное состояние (менее порога warning)
     case normal
 
-    /// Предупреждение о приближении к лимиту (55-59 минут)
+    /// Предупреждение о приближении к лимиту (между warning и critical)
     case warning
 
-    /// Критическое состояние, рекомендуется перерыв (60+ минут)
+    /// Критическое состояние, рекомендуется перерыв (выше порога critical)
     case critical
 }
 
@@ -48,8 +48,7 @@ enum SessionLimitReason: String, Equatable {
 /// - Управление цветами UI в зависимости от рейтинга и усталости
 ///
 /// ## Пороги усталости:
-/// - **55 минут**: переход в состояние warning (оранжевый)
-/// - **60 минут**: переход в состояние critical (красный, пульсация)
+/// - Значения настраиваются пользователем в окне настроек.
 class RandomizerView: ObservableObject {
 
     // MARK: - Published Properties
@@ -71,6 +70,12 @@ class RandomizerView: ObservableObject {
 
     /// Текущее состояние усталости пользователя
     @Published var fatigueState: SessionFatigueState = .normal
+
+    /// Порог warning для усталости в минутах
+    @Published private(set) var fatigueWarningMinutes: Int = 55
+
+    /// Порог critical для усталости в минутах
+    @Published private(set) var fatigueCriticalMinutes: Int = 60
 
     /// Текущий банкролл в долларах
     @Published private(set) var currentBankrollUSD: Double = 0
@@ -116,26 +121,26 @@ class RandomizerView: ObservableObject {
 
     // MARK: - Private Properties
 
-    /// Порог предупреждения о длительной работе (55 минут)
-    private let warningThreshold: TimeInterval = 55 * 60
+    /// Минимально допустимый порог warning (в минутах)
+    private let minFatigueWarningMinutes = 1
 
-    /// Порог критической усталости (60 минут)
-    private let criticalThreshold: TimeInterval = 60 * 60
+    /// Максимально допустимый порог warning (в минутах)
+    private let maxFatigueWarningMinutes = 1439
+
+    /// Минимально допустимый порог critical (в минутах)
+    private let minFatigueCriticalMinutes = 2
+
+    /// Максимально допустимый порог critical (в минутах)
+    private let maxFatigueCriticalMinutes = 1440
 
     /// Сервис генерации случайных чисел и расчёта рейтинга
     private let service: RandomizerServiceProtocol
-
-    /// Персистентное хранилище общего времени
-    private let defaults: UserDefaults
 
     /// Сервис локальных уведомлений macOS
     private let notificationService: NotificationServiceProtocol
 
     /// Провайдер текущего времени (для таймеров и тестируемости)
     private let currentDateProvider: () -> Date
-
-    /// Ключ сохранения общего времени использования
-    private let allTimeDurationKey = "allTimeDuration"
 
     /// Полный путь к JSON-файлу с настройками банкролла
     private let bankrollSettingsFileURL: URL
@@ -157,7 +162,7 @@ class RandomizerView: ObservableObject {
     ///   - service: Сервис генерации чисел (по умолчанию `RandomizerService`)
     ///   - notificationService: Сервис локальных уведомлений
     ///   - autoStartTimer: Запускать ли внутренний таймер сразу после инициализации
-    ///   - defaults: Хранилище для персистентного общего времени
+    ///   - defaults: Не используется (оставлен для обратной совместимости инициализации)
     ///   - bankrollSettingsFileURL: URL JSON-файла настроек банкролла
     ///   - shotJournalFileURL: URL JSON-файла журнала шотов
     ///
@@ -166,20 +171,18 @@ class RandomizerView: ObservableObject {
         service: RandomizerServiceProtocol = RandomizerService(),
         notificationService: NotificationServiceProtocol = NoopNotificationService(),
         autoStartTimer: Bool = true,
-        defaults: UserDefaults = .standard,
+        defaults _: UserDefaults = .standard,
         bankrollSettingsFileURL: URL? = nil,
         shotJournalFileURL: URL? = nil,
         currentDateProvider: @escaping () -> Date = Date.init
     ) {
         self.service = service
         self.notificationService = notificationService
-        self.defaults = defaults
         self.currentDateProvider = currentDateProvider
         self.bankrollSettingsFileURL = bankrollSettingsFileURL ?? Self.defaultBankrollSettingsFileURL()
         self.shotJournalFileURL = shotJournalFileURL ?? Self.defaultShotJournalFileURL()
 
-        requestNotificationAuthorizationIfNeeded()
-        state.allTimeDuration = defaults.double(forKey: allTimeDurationKey)
+        state.allTimeDuration = 0
         loadBankrollSettings()
         loadShotJournal()
         checkFatigue()
@@ -215,7 +218,6 @@ class RandomizerView: ObservableObject {
     func tick() {
         state.sessionDuration += 1
         state.allTimeDuration += 1
-        persistAllTimeDuration()
 
         // Проверяем усталость каждую секунду
         checkFatigue()
@@ -227,14 +229,24 @@ class RandomizerView: ObservableObject {
         }
     }
 
+    /// Порог warning в секундах
+    private var warningThreshold: TimeInterval {
+        TimeInterval(fatigueWarningMinutes * 60)
+    }
+
+    /// Порог critical в секундах
+    private var criticalThreshold: TimeInterval {
+        TimeInterval(fatigueCriticalMinutes * 60)
+    }
+
     // MARK: - Fatigue Monitoring
 
     /// Проверяет уровень усталости на основе общего времени использования
     ///
     /// Обновляет `fatigueState` в зависимости от пройденного времени:
-    /// - < 55 минут: normal
-    /// - 55-59 минут: warning
-    /// - ≥ 60 минут: critical
+    /// - < warning: normal
+    /// - warning..<(critical): warning
+    /// - >= critical: critical
     private func checkFatigue() {
         let previousState = fatigueState
         let nextState: SessionFatigueState
@@ -412,10 +424,9 @@ class RandomizerView: ObservableObject {
 
     /// Сбрасывает общее время использования
     ///
-    /// Обнуляет `allTimeDuration`, сохраняет состояние и пересчитывает усталость.
+    /// Обнуляет `allTimeDuration` и пересчитывает усталость.
     func resetAllTime() {
         state.allTimeDuration = 0
-        persistAllTimeDuration()
         checkFatigue()
     }
 
@@ -453,6 +464,34 @@ class RandomizerView: ObservableObject {
     func setShotAttempts(_ value: Int) {
         shotAttempts = max(1, value)
         evaluateShotStopLossIfNeeded()
+        persistBankrollSettings()
+    }
+
+    /// Обновляет порог warning для усталости в минутах
+    ///
+    /// - Parameter value: Новый порог warning
+    func setFatigueWarningMinutes(_ value: Int) {
+        let warning = min(max(minFatigueWarningMinutes, value), maxFatigueWarningMinutes)
+        fatigueWarningMinutes = warning
+
+        if fatigueCriticalMinutes <= warning {
+            fatigueCriticalMinutes = min(maxFatigueCriticalMinutes, warning + 1)
+        }
+
+        checkFatigue()
+        persistBankrollSettings()
+    }
+
+    /// Обновляет порог critical для усталости в минутах
+    ///
+    /// - Parameter value: Новый порог critical
+    func setFatigueCriticalMinutes(_ value: Int) {
+        let critical = min(
+            max(fatigueWarningMinutes + 1, value),
+            maxFatigueCriticalMinutes
+        )
+        fatigueCriticalMinutes = max(minFatigueCriticalMinutes, critical)
+        checkFatigue()
         persistBankrollSettings()
     }
 
@@ -518,6 +557,14 @@ class RandomizerView: ObservableObject {
     /// Уменьшает количество попыток шота (BI) на 1 (не ниже 1)
     func decrementShotAttempts() {
         setShotAttempts(max(1, shotAttempts - 1))
+    }
+
+    /// Инициирует запрос разрешения на локальные уведомления
+    ///
+    /// Вызывается из UI после появления окна, чтобы системный prompt
+    /// показывался в корректном контексте активного приложения.
+    func requestNotificationAuthorization() {
+        requestNotificationAuthorizationIfNeeded()
     }
 
     /// Добавляет новую запись в журнал шотов
@@ -593,11 +640,6 @@ class RandomizerView: ObservableObject {
         }
 
         return 3
-    }
-
-    /// Сохраняет общее время использования в `UserDefaults`
-    private func persistAllTimeDuration() {
-        defaults.set(state.allTimeDuration, forKey: allTimeDurationKey)
     }
 
     /// Загружает параметры банкролла и шота из JSON-файла в Documents
@@ -822,6 +864,13 @@ class RandomizerView: ObservableObject {
         shotLimitNL = max(1, settings.shotLimitNL)
         shotBankrollThresholdBuyIns = max(1, settings.shotBankrollThresholdBuyIns)
         shotAttempts = max(1, settings.shotAttempts)
+        let warning = min(max(minFatigueWarningMinutes, settings.fatigueWarningMinutes), maxFatigueWarningMinutes)
+        let critical = min(
+            max(warning + 1, settings.fatigueCriticalMinutes),
+            maxFatigueCriticalMinutes
+        )
+        fatigueWarningMinutes = warning
+        fatigueCriticalMinutes = max(minFatigueCriticalMinutes, critical)
         let low = min(max(1, settings.randomizerLowUpperBound), 97)
         let mid = min(max(low + 1, settings.randomizerMidUpperBound), 98)
         randomizerLowUpperBound = low
@@ -844,6 +893,8 @@ class RandomizerView: ObservableObject {
             shotLimitNL: shotLimitNL,
             shotBankrollThresholdBuyIns: shotBankrollThresholdBuyIns,
             shotAttempts: shotAttempts,
+            fatigueWarningMinutes: fatigueWarningMinutes,
+            fatigueCriticalMinutes: fatigueCriticalMinutes,
             randomizerLowUpperBound: randomizerLowUpperBound,
             randomizerMidUpperBound: randomizerMidUpperBound,
             currentShotResultUSD: currentShotResultUSD,

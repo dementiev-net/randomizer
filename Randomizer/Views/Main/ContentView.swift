@@ -163,6 +163,9 @@ struct ContentView: View {
         .sheet(isPresented: $isBankrollSettingsPresented) {
             BankrollSettingsSheet(viewModel: viewModel)
         }
+        .onAppear {
+            viewModel.requestNotificationAuthorization()
+        }
         .onTapGesture {
             guard !viewModel.isSessionPlayBlocked else { return }
             let generator = NSHapticFeedbackManager.defaultPerformer

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UserNotifications
 
 // MARK: - Randomizer App
 
@@ -68,7 +69,11 @@ struct RandomizerApp: App {
 ///
 /// Обеспечивает полное завершение приложения при закрытии последнего окна
 /// вместо сохранения процесса в фоне (стандартное поведение macOS).
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        UNUserNotificationCenter.current().delegate = self
+    }
 
     /// Определяет, должно ли приложение завершиться при закрытии последнего окна
     ///
@@ -79,5 +84,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     ///   вместо оставления приложения активным в Dock
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return true
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .list, .sound])
     }
 }

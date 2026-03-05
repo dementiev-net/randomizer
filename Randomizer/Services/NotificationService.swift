@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import UserNotifications
+@preconcurrency import UserNotifications
 
 /// Абстракция отправки локальных уведомлений приложения
 protocol NotificationServiceProtocol {
@@ -20,15 +20,21 @@ protocol NotificationServiceProtocol {
 /// Реализация уведомлений через системный центр уведомлений macOS
 struct NotificationService: NotificationServiceProtocol {
     func requestAuthorizationIfNeeded(completion: @escaping @Sendable (Bool) -> Void) {
-        UNUserNotificationCenter.current().getNotificationSettings { settings in
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
             switch settings.authorizationStatus {
             case .authorized, .provisional, .ephemeral:
                 completion(true)
             case .denied:
                 completion(false)
             case .notDetermined:
-                UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
-                    completion(granted)
+                DispatchQueue.main.async {
+                    center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+                        if let error {
+                            NSLog("Randomizer notification auth error: \(error.localizedDescription)")
+                        }
+                        completion(granted)
+                    }
                 }
             @unknown default:
                 completion(false)
@@ -45,9 +51,13 @@ struct NotificationService: NotificationServiceProtocol {
             content.body = body
             content.sound = .default
 
-            let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
-            UNUserNotificationCenter.current().add(request) { _ in
-                // Тихо игнорируем ошибку, чтобы не ломать UX при сбоях центра уведомлений.
+            // На macOS уведомление с небольшим delay доставляется стабильнее, чем trigger=nil.
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.25, repeats: false)
+            let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error {
+                    NSLog("Randomizer notification error: \(error.localizedDescription)")
+                }
             }
         }
     }
