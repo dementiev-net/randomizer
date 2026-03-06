@@ -163,8 +163,8 @@ class RandomizerView: ObservableObject {
     /// Ключ сохранения общего времени использования
     private let allTimeDurationKey = "allTimeDuration"
 
-    /// Ключ сохранения календарного дня для общего времени
-    private let allTimeDayKey = "allTimeDay"
+    /// Ключ сохранения последнего обновления общего времени (unix timestamp)
+    private let allTimeLastUpdatedAtKey = "allTimeLastUpdatedAt"
 
     // MARK: - Initialization
 
@@ -229,10 +229,11 @@ class RandomizerView: ObservableObject {
     /// Увеличивает счётчики времени, проверяет усталость и
     /// генерирует новое число при достижении интервала автогенерации.
     func tick() {
+        let now = currentDateProvider()
         state.sessionDuration += 1
-        resetAllTimeIfDayChanged()
+        resetAllTimeIfDayChanged(currentDate: now)
         state.allTimeDuration += 1
-        persistAllTimeDuration()
+        persistAllTimeDuration(currentDate: now)
 
         // Проверяем усталость каждую секунду
         checkFatigue()
@@ -462,7 +463,7 @@ class RandomizerView: ObservableObject {
     /// Обнуляет `allTimeDuration` и пересчитывает усталость.
     func resetAllTime() {
         state.allTimeDuration = 0
-        persistAllTimeDuration()
+        persistAllTimeDuration(currentDate: currentDateProvider())
         checkFatigue()
     }
 
@@ -699,35 +700,41 @@ class RandomizerView: ObservableObject {
     ///
     /// Если сохранённый день не совпадает с сегодняшним, счётчик сбрасывается в 0.
     private func restoreAllTimeDurationForCurrentDay() {
-        let todayKey = Self.dayKey(for: currentDateProvider())
-        let storedDayKey = defaults.string(forKey: allTimeDayKey)
+        let now = currentDateProvider()
 
-        if storedDayKey == todayKey {
+        if isAllTimeStoredForCurrentDay(currentDate: now) {
             state.allTimeDuration = defaults.double(forKey: allTimeDurationKey)
+            persistAllTimeDuration(currentDate: now)
             return
         }
 
         state.allTimeDuration = 0
-        defaults.set(todayKey, forKey: allTimeDayKey)
-        defaults.set(0, forKey: allTimeDurationKey)
+        persistAllTimeDuration(currentDate: now)
     }
 
     /// Сбрасывает счётчик общего времени, если наступил новый календарный день
-    private func resetAllTimeIfDayChanged() {
-        let todayKey = Self.dayKey(for: currentDateProvider())
-        let storedDayKey = defaults.string(forKey: allTimeDayKey)
-        guard storedDayKey == todayKey else {
+    private func resetAllTimeIfDayChanged(currentDate: Date) {
+        guard isAllTimeStoredForCurrentDay(currentDate: currentDate) else {
             state.allTimeDuration = 0
-            defaults.set(todayKey, forKey: allTimeDayKey)
-            defaults.set(0, forKey: allTimeDurationKey)
+            persistAllTimeDuration(currentDate: currentDate)
             return
         }
     }
 
+    /// Проверяет, что сохранённый счётчик общего времени относится к текущему дню
+    private func isAllTimeStoredForCurrentDay(currentDate: Date) -> Bool {
+        guard let timestamp = defaults.object(forKey: allTimeLastUpdatedAtKey) as? TimeInterval else {
+            return false
+        }
+
+        let storedDate = Date(timeIntervalSince1970: timestamp)
+        return Calendar.autoupdatingCurrent.isDate(storedDate, inSameDayAs: currentDate)
+    }
+
     /// Сохраняет общее время использования для текущего календарного дня
-    private func persistAllTimeDuration() {
+    private func persistAllTimeDuration(currentDate: Date) {
         defaults.set(state.allTimeDuration, forKey: allTimeDurationKey)
-        defaults.set(Self.dayKey(for: currentDateProvider()), forKey: allTimeDayKey)
+        defaults.set(currentDate.timeIntervalSince1970, forKey: allTimeLastUpdatedAtKey)
     }
 
     /// Загружает параметры банкролла и шота из JSON-файла в Documents
@@ -1006,12 +1013,6 @@ class RandomizerView: ObservableObject {
     /// Переводит минуты в часы с округлением вверх (минимум 1 час)
     private static func hoursFromMinutesRoundedUp(_ minutes: Int) -> Int {
         max(1, (max(1, minutes) + 59) / 60)
-    }
-
-    /// Возвращает ключ календарного дня в текущем часовом поясе
-    private static func dayKey(for date: Date) -> String {
-        let startOfDay = Calendar.current.startOfDay(for: date)
-        return String(Int(startOfDay.timeIntervalSince1970))
     }
 
     /// Создаёт каталог Documents/Randomizer при необходимости

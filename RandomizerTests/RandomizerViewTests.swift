@@ -181,6 +181,44 @@ final class RandomizerViewTests: XCTestCase {
         XCTAssertEqual(viewModel.state.allTimeDuration, 1)
     }
 
+    func testAllTimeWithoutLastUpdatedAtResetsOnInit() {
+        let defaults = makeCleanDefaults()
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        defaults.set(3_600, forKey: "allTimeDuration")
+        defaults.removeObject(forKey: "allTimeLastUpdatedAt")
+
+        let viewModel = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: defaults,
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL(),
+            currentDateProvider: { now }
+        )
+
+        XCTAssertEqual(viewModel.state.allTimeDuration, 0)
+        XCTAssertEqual(defaults.double(forKey: "allTimeDuration"), 0)
+        XCTAssertNotNil(defaults.object(forKey: "allTimeLastUpdatedAt"))
+    }
+
+    func testAllTimeRestoresByLastUpdatedTimestamp() {
+        let defaults = makeCleanDefaults()
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        defaults.set(120, forKey: "allTimeDuration")
+        defaults.set(now.addingTimeInterval(-30).timeIntervalSince1970, forKey: "allTimeLastUpdatedAt")
+
+        let viewModel = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: defaults,
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL(),
+            currentDateProvider: { now }
+        )
+
+        XCTAssertEqual(viewModel.state.allTimeDuration, 120)
+    }
+
     func testFatigueTransitionSendsRestNotificationOnce() {
         let notifications = MockNotificationService()
         let viewModel = RandomizerView(
