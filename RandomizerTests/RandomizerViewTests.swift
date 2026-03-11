@@ -405,6 +405,42 @@ final class RandomizerViewTests: XCTestCase {
         XCTAssertTrue(viewModel.canTakeShot)
     }
 
+    func testCurrentBankrollIsSumOfRoomAndWallet() {
+        let viewModel = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: makeCleanDefaults(),
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL()
+        )
+
+        viewModel.setBankrollInRoomUSD(540)
+        viewModel.setBankrollInWalletUSD(160)
+
+        XCTAssertEqual(viewModel.bankrollInRoomUSD, 540)
+        XCTAssertEqual(viewModel.bankrollInWalletUSD, 160)
+        XCTAssertEqual(viewModel.currentBankrollUSD, 700)
+    }
+
+    func testShotJournalApplyToBankrollConsumesWalletWhenRoomInsufficient() {
+        let viewModel = RandomizerView(
+            service: MockRandomizerService(),
+            autoStartTimer: false,
+            defaults: makeCleanDefaults(),
+            bankrollSettingsFileURL: makeSettingsFileURL(),
+            shotJournalFileURL: makeShotJournalFileURL()
+        )
+        viewModel.setShotAttempts(10)
+        viewModel.setBankrollInRoomUSD(30)
+        viewModel.setBankrollInWalletUSD(70)
+
+        viewModel.addShotJournalEntry(resultUSD: -50, comment: "", applyToBankroll: true)
+
+        XCTAssertEqual(viewModel.bankrollInRoomUSD, 0)
+        XCTAssertEqual(viewModel.bankrollInWalletUSD, 50)
+        XCTAssertEqual(viewModel.currentBankrollUSD, 50)
+    }
+
     func testBankrollSettingsPersistBetweenViewModelInstances() {
         let suite = "RandomizerTests.BankrollPersistence.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else {
@@ -423,6 +459,8 @@ final class RandomizerViewTests: XCTestCase {
                 shotJournalFileURL: journalURL
             )
             viewModel.setCurrentBankrollUSD(730)
+            viewModel.setBankrollInRoomUSD(510)
+            viewModel.setBankrollInWalletUSD(220)
             viewModel.setShotLimitNL(25)
             viewModel.setShotBankrollThresholdBuyIns(30)
             viewModel.setShotAttempts(3)
@@ -444,6 +482,8 @@ final class RandomizerViewTests: XCTestCase {
             shotJournalFileURL: journalURL
         )
         XCTAssertEqual(reloaded.currentBankrollUSD, 730)
+        XCTAssertEqual(reloaded.bankrollInRoomUSD, 510)
+        XCTAssertEqual(reloaded.bankrollInWalletUSD, 220)
         XCTAssertEqual(reloaded.shotLimitNL, 25)
         XCTAssertEqual(reloaded.shotBankrollThresholdBuyIns, 30)
         XCTAssertEqual(reloaded.shotAttempts, 3)

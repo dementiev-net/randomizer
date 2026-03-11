@@ -83,6 +83,12 @@ class RandomizerView: ObservableObject {
     /// Текущий банкролл в долларах
     @Published private(set) var currentBankrollUSD: Double = 0
 
+    /// Средства в руме (учитываются в суммарном банкролле)
+    @Published private(set) var bankrollInRoomUSD: Double = 0
+
+    /// Средства в кошельке (учитываются в суммарном банкролле)
+    @Published private(set) var bankrollInWalletUSD: Double = 0
+
     /// Лимит для шота (например, 25 для NL25)
     @Published private(set) var shotLimitNL: Int = 25
 
@@ -471,7 +477,29 @@ class RandomizerView: ObservableObject {
     ///
     /// - Parameter value: Значение в долларах
     func setCurrentBankrollUSD(_ value: Double) {
-        currentBankrollUSD = max(0, value)
+        bankrollInRoomUSD = max(0, value)
+        bankrollInWalletUSD = 0
+        updateCurrentBankrollUSD()
+        evaluateAutoUnlockIfNeeded()
+        persistBankrollSettings()
+    }
+
+    /// Обновляет сумму в руме
+    ///
+    /// - Parameter value: Значение в долларах
+    func setBankrollInRoomUSD(_ value: Double) {
+        bankrollInRoomUSD = max(0, value)
+        updateCurrentBankrollUSD()
+        evaluateAutoUnlockIfNeeded()
+        persistBankrollSettings()
+    }
+
+    /// Обновляет сумму в кошельке
+    ///
+    /// - Parameter value: Значение в долларах
+    func setBankrollInWalletUSD(_ value: Double) {
+        bankrollInWalletUSD = max(0, value)
+        updateCurrentBankrollUSD()
         evaluateAutoUnlockIfNeeded()
         persistBankrollSettings()
     }
@@ -634,7 +662,7 @@ class RandomizerView: ObservableObject {
         let trimmedComment = comment.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if applyToBankroll {
-            setCurrentBankrollUSD(currentBankrollUSD + resultUSD)
+            applyBankrollDelta(resultUSD)
         }
 
         if !isShotLocked {
@@ -663,6 +691,31 @@ class RandomizerView: ObservableObject {
     }
 
     // MARK: - Private Methods
+
+    /// Пересчитывает суммарный банкролл по значениям "в руме" и "в кошельке"
+    private func updateCurrentBankrollUSD() {
+        currentBankrollUSD = bankrollInRoomUSD + bankrollInWalletUSD
+    }
+
+    /// Применяет изменение к общему банкроллу, в первую очередь к сумме в руме
+    ///
+    /// Для отрицательного значения, если денег в руме не хватает,
+    /// недостающее списывается из кошелька.
+    private func applyBankrollDelta(_ delta: Double) {
+        guard delta.isFinite else { return }
+
+        if delta >= 0 {
+            bankrollInRoomUSD += delta
+        } else {
+            let deficit = max(0, -delta - bankrollInRoomUSD)
+            bankrollInRoomUSD = max(0, bankrollInRoomUSD + delta)
+            bankrollInWalletUSD = max(0, bankrollInWalletUSD - deficit)
+        }
+
+        updateCurrentBankrollUSD()
+        evaluateAutoUnlockIfNeeded()
+        persistBankrollSettings()
+    }
 
     /// Обновляет цвет полосок рейтинга в зависимости от числа
     ///
@@ -955,7 +1008,9 @@ class RandomizerView: ObservableObject {
 
     /// Применяет значения настроек с валидацией границ
     private func applyBankrollSettings(_ settings: BankrollSettingsFileModel) {
-        currentBankrollUSD = max(0, settings.currentBankrollUSD)
+        bankrollInRoomUSD = max(0, settings.bankrollInRoomUSD)
+        bankrollInWalletUSD = max(0, settings.bankrollInWalletUSD)
+        updateCurrentBankrollUSD()
         shotLimitNL = max(1, settings.shotLimitNL)
         shotBankrollThresholdBuyIns = max(1, settings.shotBankrollThresholdBuyIns)
         shotAttempts = max(1, settings.shotAttempts)
@@ -991,6 +1046,8 @@ class RandomizerView: ObservableObject {
     private func currentBankrollSettings() -> BankrollSettingsFileModel {
         BankrollSettingsFileModel(
             currentBankrollUSD: currentBankrollUSD,
+            bankrollInRoomUSD: bankrollInRoomUSD,
+            bankrollInWalletUSD: bankrollInWalletUSD,
             shotLimitNL: shotLimitNL,
             shotBankrollThresholdBuyIns: shotBankrollThresholdBuyIns,
             shotAttempts: shotAttempts,

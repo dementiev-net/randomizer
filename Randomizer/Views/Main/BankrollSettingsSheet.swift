@@ -20,8 +20,14 @@ struct BankrollSettingsSheet: View {
     /// Открытие дополнительного окна приложения
     @Environment(\.openWindow) private var openWindow
 
-    /// Текстовое значение банкролла для свободного редактирования
+    /// Текстовое значение суммарного банкролла (только для чтения)
     @State private var bankrollText = ""
+
+    /// Текстовое значение суммы "в руме"
+    @State private var bankrollInRoomText = ""
+
+    /// Текстовое значение суммы "в кошельке"
+    @State private var bankrollInWalletText = ""
 
     /// Текстовое значение лимита шота для свободного редактирования
     @State private var shotLimitText = ""
@@ -69,18 +75,62 @@ struct BankrollSettingsSheet: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 10) {
                         GridRow {
+                            Text("Деньги, $")
+                                .foregroundColor(.gray)
+
+                            HStack(spacing: 8) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("В руме")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.gray)
+
+                                    TextField("0", text: $bankrollInRoomText)
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 100)
+                                        .onChange(of: bankrollInRoomText) { _, newValue in
+                                            handleBankrollInRoomInputChange(newValue)
+                                        }
+                                        .onSubmit {
+                                            commitBankrollInRoomInput()
+                                        }
+                                }
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("В кошельке")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.gray)
+
+                                    TextField("0", text: $bankrollInWalletText)
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 100)
+                                        .onChange(of: bankrollInWalletText) { _, newValue in
+                                            handleBankrollInWalletInputChange(newValue)
+                                        }
+                                        .onSubmit {
+                                            commitBankrollInWalletInput()
+                                        }
+                                }
+                            }
+                        }
+
+                        GridRow {
                             Text("Банкролл, $")
                                 .foregroundColor(.gray)
 
-                            TextField("0", text: $bankrollText)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 140)
-                                .onChange(of: bankrollText) { _, newValue in
-                                    handleBankrollInputChange(newValue)
-                                }
-                                .onSubmit {
-                                    commitBankrollInput()
-                                }
+                            Text(bankrollText)
+                                .monospacedDigit()
+                                .foregroundColor(.green)
+                                .frame(width: 140, alignment: .leading)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Color(nsColor: .controlBackgroundColor))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                )
                         }
 
                         GridRow {
@@ -423,7 +473,7 @@ struct BankrollSettingsSheet: View {
             )
         )
         .onAppear {
-            bankrollText = formatEditableAmount(viewModel.currentBankrollUSD)
+            syncBankrollTextFieldsFromModel()
             shotLimitText = String(viewModel.shotLimitNL)
             sessionStopLossText = formatEditableAmount(viewModel.sessionStopLossUSD)
             sessionStopWinText = formatEditableAmount(viewModel.sessionStopWinUSD)
@@ -464,10 +514,20 @@ struct BankrollSettingsSheet: View {
         return String(value)
     }
 
-    private func handleBankrollInputChange(_ newValue: String) {
+    private func syncBankrollTextFieldsFromModel() {
+        bankrollInRoomText = formatEditableAmount(viewModel.bankrollInRoomUSD)
+        bankrollInWalletText = formatEditableAmount(viewModel.bankrollInWalletUSD)
+        bankrollText = formatEditableAmount(viewModel.currentBankrollUSD)
+    }
+
+    private func updateTotalBankrollText() {
+        bankrollText = formatEditableAmount(viewModel.currentBankrollUSD)
+    }
+
+    private func handleBankrollInRoomInputChange(_ newValue: String) {
         let sanitized = sanitizeDecimalInput(newValue)
         guard sanitized == newValue else {
-            bankrollText = sanitized
+            bankrollInRoomText = sanitized
             return
         }
 
@@ -475,7 +535,23 @@ struct BankrollSettingsSheet: View {
             return
         }
 
-        viewModel.setCurrentBankrollUSD(value)
+        viewModel.setBankrollInRoomUSD(value)
+        updateTotalBankrollText()
+    }
+
+    private func handleBankrollInWalletInputChange(_ newValue: String) {
+        let sanitized = sanitizeDecimalInput(newValue)
+        guard sanitized == newValue else {
+            bankrollInWalletText = sanitized
+            return
+        }
+
+        guard !sanitized.isEmpty, let value = Double(sanitized) else {
+            return
+        }
+
+        viewModel.setBankrollInWalletUSD(value)
+        updateTotalBankrollText()
     }
 
     private func handleShotLimitInputChange(_ newValue: String) {
@@ -524,21 +600,42 @@ struct BankrollSettingsSheet: View {
         viewModel.setSessionStopWinUSD(value)
     }
 
-    private func commitBankrollInput() {
-        let text = sanitizeDecimalInput(bankrollText)
+    private func commitBankrollInRoomInput() {
+        let text = sanitizeDecimalInput(bankrollInRoomText)
         if text.isEmpty {
-            viewModel.setCurrentBankrollUSD(0)
-            bankrollText = "0"
+            viewModel.setBankrollInRoomUSD(0)
+            bankrollInRoomText = "0"
+            updateTotalBankrollText()
             return
         }
 
         guard let value = Double(text) else {
-            bankrollText = formatEditableAmount(viewModel.currentBankrollUSD)
+            bankrollInRoomText = formatEditableAmount(viewModel.bankrollInRoomUSD)
             return
         }
 
-        viewModel.setCurrentBankrollUSD(value)
-        bankrollText = formatEditableAmount(viewModel.currentBankrollUSD)
+        viewModel.setBankrollInRoomUSD(value)
+        bankrollInRoomText = formatEditableAmount(viewModel.bankrollInRoomUSD)
+        updateTotalBankrollText()
+    }
+
+    private func commitBankrollInWalletInput() {
+        let text = sanitizeDecimalInput(bankrollInWalletText)
+        if text.isEmpty {
+            viewModel.setBankrollInWalletUSD(0)
+            bankrollInWalletText = "0"
+            updateTotalBankrollText()
+            return
+        }
+
+        guard let value = Double(text) else {
+            bankrollInWalletText = formatEditableAmount(viewModel.bankrollInWalletUSD)
+            return
+        }
+
+        viewModel.setBankrollInWalletUSD(value)
+        bankrollInWalletText = formatEditableAmount(viewModel.bankrollInWalletUSD)
+        updateTotalBankrollText()
     }
 
     private func commitShotLimitInput() {
@@ -622,7 +719,7 @@ struct BankrollSettingsSheet: View {
             applyToBankroll: applyShotResultToBankroll
         )
 
-        bankrollText = formatEditableAmount(viewModel.currentBankrollUSD)
+        syncBankrollTextFieldsFromModel()
         shotResultText = ""
         shotCommentText = ""
     }
@@ -685,7 +782,8 @@ struct BankrollSettingsSheet: View {
     }
 
     private func closeSheet(openJournal: Bool = false) {
-        commitBankrollInput()
+        commitBankrollInRoomInput()
+        commitBankrollInWalletInput()
         commitShotLimitInput()
         commitSessionStopLossInput()
         commitSessionStopWinInput()

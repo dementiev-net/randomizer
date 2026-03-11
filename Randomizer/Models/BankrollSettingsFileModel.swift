@@ -10,6 +10,8 @@ import Foundation
 /// JSON-модель для хранения настроек банкролла
 struct BankrollSettingsFileModel: Codable {
     let currentBankrollUSD: Double
+    let bankrollInRoomUSD: Double
+    let bankrollInWalletUSD: Double
     let shotLimitNL: Int
     let shotBankrollThresholdBuyIns: Int
     let shotAttempts: Int
@@ -29,6 +31,8 @@ struct BankrollSettingsFileModel: Codable {
 
     private enum CodingKeys: String, CodingKey {
         case currentBankrollUSD
+        case bankrollInRoomUSD
+        case bankrollInWalletUSD
         case shotLimitNL
         case shotBankrollThresholdBuyIns
         case shotAttempts
@@ -49,6 +53,8 @@ struct BankrollSettingsFileModel: Codable {
 
     init(
         currentBankrollUSD: Double,
+        bankrollInRoomUSD: Double,
+        bankrollInWalletUSD: Double,
         shotLimitNL: Int,
         shotBankrollThresholdBuyIns: Int,
         shotAttempts: Int,
@@ -67,6 +73,8 @@ struct BankrollSettingsFileModel: Codable {
         sessionLimitReason: String?
     ) {
         self.currentBankrollUSD = currentBankrollUSD
+        self.bankrollInRoomUSD = bankrollInRoomUSD
+        self.bankrollInWalletUSD = bankrollInWalletUSD
         self.shotLimitNL = shotLimitNL
         self.shotBankrollThresholdBuyIns = shotBankrollThresholdBuyIns
         self.shotAttempts = shotAttempts
@@ -87,7 +95,29 @@ struct BankrollSettingsFileModel: Codable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        currentBankrollUSD = try container.decodeIfPresent(Double.self, forKey: .currentBankrollUSD) ?? 0
+        let fallbackBankroll = max(
+            0,
+            try container.decodeIfPresent(Double.self, forKey: .currentBankrollUSD) ?? 0
+        )
+        let decodedRoom = try container.decodeIfPresent(Double.self, forKey: .bankrollInRoomUSD)
+        let decodedWallet = try container.decodeIfPresent(Double.self, forKey: .bankrollInWalletUSD)
+
+        switch (decodedRoom, decodedWallet) {
+        case let (room?, wallet?):
+            bankrollInRoomUSD = max(0, room)
+            bankrollInWalletUSD = max(0, wallet)
+        case let (room?, nil):
+            bankrollInRoomUSD = max(0, room)
+            bankrollInWalletUSD = 0
+        case let (nil, wallet?):
+            bankrollInRoomUSD = 0
+            bankrollInWalletUSD = max(0, wallet)
+        case (nil, nil):
+            bankrollInRoomUSD = fallbackBankroll
+            bankrollInWalletUSD = 0
+        }
+
+        currentBankrollUSD = bankrollInRoomUSD + bankrollInWalletUSD
         shotLimitNL = try container.decodeIfPresent(Int.self, forKey: .shotLimitNL) ?? 25
         shotBankrollThresholdBuyIns = try container.decodeIfPresent(Int.self, forKey: .shotBankrollThresholdBuyIns) ?? 25
         shotAttempts = try container.decodeIfPresent(Int.self, forKey: .shotAttempts) ?? 2
@@ -108,6 +138,8 @@ struct BankrollSettingsFileModel: Codable {
 
     static let defaults = BankrollSettingsFileModel(
         currentBankrollUSD: 0,
+        bankrollInRoomUSD: 0,
+        bankrollInWalletUSD: 0,
         shotLimitNL: 25,
         shotBankrollThresholdBuyIns: 25,
         shotAttempts: 2,
